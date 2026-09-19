@@ -4,16 +4,18 @@
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
-const MAX_SIDE = 640;            // working resolution (long side, px)
-const LINE_WIDTH = 2.4;          // outline thickness in image pixels
+// Line thickness, in working-image pixels, at a 640px working size (scaled for smaller sizes).
+const LINE_WIDTH = 2.6;          // shape outline
+const DETAIL_WIDTH = 1.7;        // interior pen lines
 
-// Detail levels 1..5 → number of color groups, smoothing strength, smallest space kept
+// Detail levels 1..5 → working size, color groups, smoothing, smallest space, island/streak
+// removal limits, edge sensitivity, shortest pen line
 const DETAIL = {
-  1: { K: 4,  sigmaR: 34, minAreaFrac: 0.0080 },
-  2: { K: 6,  sigmaR: 30, minAreaFrac: 0.0040 },
-  3: { K: 8,  sigmaR: 26, minAreaFrac: 0.0018 },
-  4: { K: 11, sigmaR: 22, minAreaFrac: 0.0009 },
-  5: { K: 14, sigmaR: 18, minAreaFrac: 0.0004 },
+  1: { side: 300, K: 3,  sigmaR: 40, minAreaFrac: 0.0200, islandFrac: 0.050, sliverFrac: 0.040, sliverRatio: 5,  edgeFrac: 0.008, minChain: 30 },
+  2: { side: 360, K: 4,  sigmaR: 36, minAreaFrac: 0.0100, islandFrac: 0.035, sliverFrac: 0.030, sliverRatio: 6,  edgeFrac: 0.014, minChain: 26 },
+  3: { side: 440, K: 5,  sigmaR: 32, minAreaFrac: 0.0050, islandFrac: 0.020, sliverFrac: 0.020, sliverRatio: 7,  edgeFrac: 0.022, minChain: 22 },
+  4: { side: 540, K: 7,  sigmaR: 28, minAreaFrac: 0.0022, islandFrac: 0.008, sliverFrac: 0.010, sliverRatio: 9,  edgeFrac: 0.034, minChain: 18 },
+  5: { side: 640, K: 10, sigmaR: 24, minAreaFrac: 0.0009, islandFrac: 0.003, sliverFrac: 0.004, sliverRatio: 12, edgeFrac: 0.050, minChain: 14 },
 };
 
 // Palette: each color has its own note (A-minor pentatonic, low → high).
@@ -117,7 +119,7 @@ function rgbToLab(rgb, n) {
     const Y = (r * 0.2126 + g * 0.7152 + b * 0.0722);
     const Z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
     const fx = f(X), fy = f(Y), fz = f(Z);
-    lab[i * 3] = (116 * fy - 16) * 0.85;
+    lab[i * 3] = (116 * fy - 16) * 0.7;
     lab[i * 3 + 1] = 500 * (fx - fy);
     lab[i * 3 + 2] = 200 * (fy - fz);
   }
@@ -234,43 +236,60 @@ function components(cls, W, H) {
   return { lab, count: next, areas };
 }
 
-// Fold every component smaller than minArea into the neighbour it touches most.
-function mergeSmall(lab, W, H, count, areas, minArea) {
+// Fold weak components into the neighbour they touch most. A component is weak when it is
+// tiny, an island enclosed by a single neighbour, or a long thin streak (texture, grain).
+function mergeSmall(lab, W, H, count, areas, opts) {
+  const { minArea, islandArea, sliverArea, sliverRatio } = opts;
   const n = W * H;
   const parent = new Int32Array(count);
   for (let i = 0; i < count; i++) parent[i] = i;
   const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
   const area = Float64Array.from(areas);
-  for (let pass = 0; pass < 8; pass++) {
-    // Tally shared border between small components and their neighbours.
-    const touch = new Map();
-    const bump = (a, b) => { const key = a * count + b; touch.set(key, (touch.get(key) || 0) + 1); };
-    let anySmall = false;
+  const perim = new Float64Array(count);
+  const touch = new Map();
+  const nbrs = new Map();
+  for (let pass = 0; pass < 10; pass++) {
+    touch.clear(); nbrs.clear(); perim.fill(0);
+    const bump = (a, b) => {
+      const key = a * count + b;
+      touch.set(key, (touch.get(key) || 0) + 1);
+      let s = nbrs.get(a); if (!s) { s = new Set(); nbrs.set(a, s); } s.add(b);
+    };
     for (let i = 0; i < n; i++) {
       const a = find(lab[i]);
-      const x = i % W;
-      if (x < W - 1) { const b = find(lab[i + 1]); if (a !== b) { if (area[a] < minArea) bump(a, b); if (area[b] < minArea) bump(b, a); } }
-      if (i < n - W) { const b = find(lab[i + W]); if (a !== b) { if (area[a] < minArea) bump(a, b); if (area[b] < minArea) bump(b, a); } }
+      const x = i % W, y = (i - x) / W;
+      if (x === 0 || x === W - 1) perim[a]++;
+      if (y === 0 || y === H - 1) perim[a]++;
+      if (x < W - 1) { const b = find(lab[i + 1]); if (a !== b) { perim[a]++; perim[b]++; bump(a, b); bump(b, a); } }
+      if (y < H - 1) { const b = find(lab[i + W]); if (a !== b) { perim[a]++; perim[b]++; bump(a, b); bump(b, a); } }
     }
-    // Best neighbour per small component.
-    const best = new Map();
-    for (const [key, cnt] of touch) {
-      const a = Math.floor(key / count), b = key - a * count;
-      const cur = best.get(a);
-      if (!cur || cnt > cur.cnt) best.set(a, { b, cnt });
+    const weak = [];
+    for (let a = 0; a < count; a++) {
+      if (find(a) !== a || !nbrs.has(a)) continue;
+      const A = area[a];
+      const isSmall = A < minArea;
+      const isIsland = nbrs.get(a).size === 1 && A < islandArea;
+      const isSliver = A < sliverArea && (perim[a] * perim[a]) / (4 * Math.PI * A) > sliverRatio;
+      if (isSmall || isIsland || isSliver) weak.push(a);
     }
-    if (best.size === 0) break;
-    const order = [...best.keys()].sort((p, q) => area[p] - area[q]);
-    for (const a of order) {
-      const ra = find(a);
-      if (ra !== a || area[ra] >= minArea) continue;
-      const rb = find(best.get(a).b);
-      if (rb === ra) continue;
-      parent[ra] = rb;
-      area[rb] += area[ra];
-      anySmall = true;
+    if (!weak.length) break;
+    weak.sort((p, q) => area[p] - area[q]);
+    let merged = 0;
+    for (const a of weak) {
+      if (find(a) !== a) continue;
+      let best = -1, bc = -1;
+      for (const b0 of nbrs.get(a)) {
+        const b = find(b0);
+        if (b === a) continue;
+        const c = touch.get(a * count + b0) || 0;
+        if (c > bc) { bc = c; best = b; }
+      }
+      if (best === -1) continue;
+      parent[a] = best;
+      area[best] += area[a];
+      merged++;
     }
-    if (!anySmall) break;
+    if (!merged) break;
   }
   // Compact labels.
   const remap = new Int32Array(count).fill(-1);
@@ -283,6 +302,157 @@ function mergeSmall(lab, W, H, count, areas, minArea) {
     outAreas[lab[i]]++;
   }
   return { lab, count: m, areas: outAreas };
+}
+
+// ---- Interior pen lines: Canny edges on the smoothed image, linked into strokes ----
+function gaussianBlur(src, W, H, sigma) {
+  const r = Math.max(1, Math.ceil(sigma * 3));
+  const k = new Float32Array(2 * r + 1);
+  let s = 0;
+  for (let i = -r; i <= r; i++) { k[i + r] = Math.exp(-(i * i) / (2 * sigma * sigma)); s += k[i + r]; }
+  for (let i = 0; i < k.length; i++) k[i] /= s;
+  const tmp = new Float32Array(W * H), out = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let acc = 0;
+    for (let i = -r; i <= r; i++) { let xx = x + i; if (xx < 0) xx = 0; else if (xx >= W) xx = W - 1; acc += src[y * W + xx] * k[i + r]; }
+    tmp[y * W + x] = acc;
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let acc = 0;
+    for (let i = -r; i <= r; i++) { let yy = y + i; if (yy < 0) yy = 0; else if (yy >= H) yy = H - 1; acc += tmp[yy * W + x] * k[i + r]; }
+    out[y * W + x] = acc;
+  }
+  return out;
+}
+
+function cannyEdges(gray, W, H, sigma, edgeFrac) {
+  const n = W * H;
+  const b = gaussianBlur(gray, W, H, sigma);
+  const mag = new Float32Array(n), dir = new Uint8Array(n);
+  let maxMag = 0;
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    const i = y * W + x;
+    const gx = -b[i - W - 1] - 2 * b[i - 1] - b[i + W - 1] + b[i - W + 1] + 2 * b[i + 1] + b[i + W + 1];
+    const gy = -b[i - W - 1] - 2 * b[i - W] - b[i - W + 1] + b[i + W - 1] + 2 * b[i + W] + b[i + W + 1];
+    const m = Math.sqrt(gx * gx + gy * gy);
+    mag[i] = m; if (m > maxMag) maxMag = m;
+    let a = Math.atan2(gy, gx) * (180 / Math.PI); if (a < 0) a += 180;
+    dir[i] = (a < 22.5 || a >= 157.5) ? 0 : (a < 67.5) ? 1 : (a < 112.5) ? 2 : 3;
+  }
+  const nms = new Float32Array(n);
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    const i = y * W + x, m = mag[i];
+    if (m === 0) continue;
+    let n1, n2;
+    switch (dir[i]) {
+      case 0: n1 = mag[i - 1]; n2 = mag[i + 1]; break;
+      case 1: n1 = mag[i + W + 1]; n2 = mag[i - W - 1]; break;
+      case 2: n1 = mag[i - W]; n2 = mag[i + W]; break;
+      default: n1 = mag[i + W - 1]; n2 = mag[i - W + 1];
+    }
+    if (m >= n1 && m >= n2) nms[i] = m;
+  }
+  const BINS = 1024, hist = new Int32Array(BINS);
+  const scale = maxMag > 0 ? (BINS - 1) / maxMag : 0;
+  for (let i = 0; i < n; i++) if (nms[i] > 0) hist[(nms[i] * scale) | 0]++;
+  let acc = 0, bin = BINS - 1;
+  for (; bin > 0; bin--) { acc += hist[bin]; if (acc >= edgeFrac * n) break; }
+  const high = Math.max(bin / (scale || 1), 40), low = high * 0.45;
+  const edge = new Uint8Array(n), stack = new Int32Array(n);
+  let sp = 0;
+  for (let i = 0; i < n; i++) if (nms[i] >= high) { edge[i] = 1; stack[sp++] = i; }
+  while (sp > 0) {
+    const i = stack[--sp], x = i % W, y = (i - x) / W;
+    for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
+      for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= W) continue;
+        const j = yy * W + xx; if (!edge[j] && nms[j] >= low) { edge[j] = 1; stack[sp++] = j; } } }
+  }
+  return edge;
+}
+
+// Remove edge pixels that sit on (or within 2px of) a shape border — those lines are drawn already.
+function suppressNearBorders(edge, lab, W, H) {
+  const n = W * H, near = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = i % W;
+    if ((x < W - 1 && lab[i] !== lab[i + 1]) || (i < n - W && lab[i] !== lab[i + W])) near[i] = 1;
+  }
+  const r = 2;
+  for (let i = 0; i < n; i++) {
+    if (!edge[i]) continue;
+    const x = i % W, y = (i - x) / W;
+    let hit = false;
+    for (let dy = -r; dy <= r && !hit; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
+      for (let dx = -r; dx <= r; dx++) { const xx = x + dx; if (xx < 0 || xx >= W) continue; if (near[yy * W + xx]) { hit = true; break; } } }
+    if (hit) edge[i] = 0;
+  }
+}
+
+// Link edge pixels into polylines (8-connected walks), drop short ones.
+function edgeChains(edge, W, H, minLen) {
+  const n = W * H;
+  const seen = new Uint8Array(n);
+  const chains = [];
+  const nb = [1, -1, W, -W, W + 1, W - 1, -W + 1, -W - 1];
+  const degree = (i) => {
+    const x = i % W; let d = 0;
+    for (let k = 0; k < 8; k++) {
+      const j = i + nb[k]; if (j < 0 || j >= n) continue;
+      const xj = j % W; if (Math.abs(xj - x) > 1) continue;
+      if (edge[j]) d++;
+    }
+    return d;
+  };
+  const walk = (start) => {
+    const pts = []; let cur = start;
+    while (cur !== -1) {
+      seen[cur] = 1; pts.push(cur % W + 0.5, ((cur / W) | 0) + 0.5);
+      const x = cur % W; let next = -1;
+      for (let k = 0; k < 8; k++) {
+        const j = cur + nb[k]; if (j < 0 || j >= n) continue;
+        if (Math.abs((j % W) - x) > 1) continue;
+        if (edge[j] && !seen[j]) { next = j; break; }
+      }
+      cur = next;
+    }
+    return pts;
+  };
+  const collect = (pts) => { if (pts.length / 2 >= minLen) chains.push(pts); };
+  for (let i = 0; i < n; i++) if (edge[i] && !seen[i] && degree(i) <= 1) collect(walk(i));
+  for (let i = 0; i < n; i++) if (edge[i] && !seen[i]) collect(walk(i));
+  return chains;
+}
+
+function simplifyOpen(pts, eps) {
+  const m = pts.length / 2;
+  const xs = new Array(m), ys = new Array(m);
+  for (let i = 0; i < m; i++) { xs[i] = pts[2 * i]; ys[i] = pts[2 * i + 1]; }
+  const keep = new Uint8Array(m); keep[0] = 1; keep[m - 1] = 1;
+  rdp(xs, ys, keep, 0, m - 1, eps);
+  const out = [];
+  for (let i = 0; i < m; i++) if (keep[i]) out.push(xs[i], ys[i]);
+  return out;
+}
+
+function chaikinOpen(pts) {
+  const n = pts.length / 2;
+  if (n < 3) return pts;
+  const out = [pts[0], pts[1]];
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = pts[2 * i], y0 = pts[2 * i + 1], x1 = pts[2 * i + 2], y1 = pts[2 * i + 3];
+    out.push(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1, 0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1);
+  }
+  out.push(pts[2 * n - 2], pts[2 * n - 1]);
+  return out;
+}
+
+function chainsToPath(chains) {
+  let d = '';
+  for (const pts of chains) {
+    d += 'M' + fmt(pts[0]) + ' ' + fmt(pts[1]);
+    for (let i = 2; i < pts.length; i += 2) d += 'L' + fmt(pts[i]) + ' ' + fmt(pts[i + 1]);
+  }
+  return d;
 }
 
 // Trace every label's boundary as closed loops on the pixel grid,
@@ -325,7 +495,7 @@ function traceLabels(lab, W, H, count) {
         nextA[cur] = nextB[cur]; nextB[cur] = -1;
         cur = nx;
       } while (cur !== start);
-      loops.push(chaikin(simplifyLoop(pts, 1.1), W, H));
+      loops.push(chaikin(simplifyLoop(pts, 1.6), W, H));
     }
     result[L] = loops;
   }
@@ -415,7 +585,7 @@ function loopsToPath(loops) {
 function traceImage(img, detailLevel) {
   const cfg = DETAIL[detailLevel] || DETAIL[3];
   const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-  const s = Math.min(1, MAX_SIDE / Math.max(iw, ih));
+  const s = Math.min(1, cfg.side / Math.max(iw, ih));
   const W = Math.max(8, Math.round(iw * s)), H = Math.max(8, Math.round(ih * s));
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
@@ -424,25 +594,39 @@ function traceImage(img, detailLevel) {
   const data = ctx.getImageData(0, 0, W, H).data;
   const n = W * H;
 
-  const smooth = bilateral(data, W, H, 3, 2.2, cfg.sigmaR, 2);
+  const smooth = bilateral(data, W, H, 4, 2.6, cfg.sigmaR, 3);
   const lab = rgbToLab(smooth, n);
   let cls = kmeansLabels(lab, n, cfg.K, 10);
-  cls = modeFilter(cls, W, H, cfg.K, 2);
+  cls = modeFilter(cls, W, H, cfg.K, 3);
   const comp = components(cls, W, H);
-  const minArea = Math.max(30, cfg.minAreaFrac * n);
-  const { lab: labels, count, areas } = mergeSmall(comp.lab, W, H, comp.count, comp.areas, minArea);
+  const { lab: labels, count, areas } = mergeSmall(comp.lab, W, H, comp.count, comp.areas, {
+    minArea: Math.max(40, cfg.minAreaFrac * n),
+    islandArea: cfg.islandFrac * n,
+    sliverArea: cfg.sliverFrac * n,
+    sliverRatio: cfg.sliverRatio,
+  });
   const loops = traceLabels(labels, W, H, count);
 
+  // Interior detail lines from the smoothed photo's luminance.
+  const gray = new Float32Array(n);
+  for (let i = 0; i < n; i++) gray[i] = 0.299 * smooth[i * 3] + 0.587 * smooth[i * 3 + 1] + 0.114 * smooth[i * 3 + 2];
+  const edge = cannyEdges(gray, W, H, 1.2, cfg.edgeFrac);
+  suppressNearBorders(edge, labels, W, H);
+  const chains = edgeChains(edge, W, H, cfg.minChain).map((c) => chaikinOpen(simplifyOpen(c, 1.4)));
+
+  const k = Math.max(0.7, Math.max(W, H) / 640);
+  const lw = fmt(LINE_WIDTH * k), dw = fmt(DETAIL_WIDTH * k);
   const parts = [];
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
   parts.push(`<rect width="${W}" height="${H}" fill="#fff"/>`);
-  parts.push(`<g id="regions" fill-rule="evenodd" stroke="${INK}" stroke-width="${LINE_WIDTH}" stroke-linejoin="round" stroke-linecap="round">`);
+  parts.push(`<g id="regions" fill-rule="evenodd" stroke="${INK}" stroke-width="${lw}" stroke-linejoin="round" stroke-linecap="round">`);
   for (let L = 0; L < count; L++) {
     const d = loopsToPath(loops[L]);
     if (!d) continue;
     parts.push(`<path data-id="${L}" data-area="${areas[L]}" d="${d}" fill="${BLANK}"/>`);
   }
   parts.push('</g>');
+  parts.push(`<path id="lines" d="${chainsToPath(chains)}" fill="none" stroke="${INK}" stroke-width="${dw}" stroke-linejoin="round" stroke-linecap="round" pointer-events="none"/>`);
   parts.push('</svg>');
   return { svgText: parts.join(''), W, H, regionCount: count };
 }
@@ -770,7 +954,7 @@ async function exportPNG() {
   const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
   try {
     const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-    const scale = 2;
+    const scale = Math.max(2, Math.ceil(1600 / Math.max(state.W, state.H)));
     const c = document.createElement('canvas');
     c.width = state.W * scale; c.height = state.H * scale;
     const ctx = c.getContext('2d');
