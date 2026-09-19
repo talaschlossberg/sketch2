@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>Snap &amp; Color</title>
+  <meta name="description" content="Take a photo, turn it into a coloring-book outline, and tap the spaces to color them in. Every color plays its own note." />
+  <meta name="theme-color" content="#f5f1ea" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Snap &amp; Color" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="bar top">
+    <h1>Snap &amp; Color</h1>
+    <div class="spacer"></div>
+    <label class="btn primary" for="cameraInput">📷 Photo</label>
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+    <label class="btn" for="fileInput" title="Pick an existing picture">🖼</label>
+    <input id="fileInput" type="file" accept="image/*" hidden />
+  </header>
+
+  <main id="stage">
+    <div id="empty" class="empty">
+      <div class="empty-art">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="40" cy="45" r="26" fill="#f77f00" opacity=".85"/>
+          <circle cx="78" cy="55" r="26" fill="#4cc9f0" opacity=".85"/>
+          <circle cx="58" cy="82" r="26" fill="#a7c957" opacity=".85"/>
+        </svg>
+      </div>
+      <p>Take a photo of anything.<br/>It becomes an outline you can color in.<br/>Tap a space to fill it. Every color sings.</p>
+      <button class="btn" id="sampleBtn">Try a sample</button>
+    </div>
+    <div id="svgHost" class="svg-host" hidden></div>
+    <div id="busy" class="busy" hidden><div class="spinner"></div><span id="busyText">Tracing outline…</span></div>
+  </main>
+
+  <section class="bar controls" id="controls" hidden>
+    <label class="detail">
+      <span>Detail</span>
+      <input id="detail" type="range" min="1" max="5" step="1" value="3" />
+    </label>
+    <button class="btn small" id="regenBtn" title="Trace the photo again with the current detail">↻ Retrace</button>
+    <button class="btn small" id="fitBtn" title="Reset zoom">⤢</button>
+  </section>
+
+  <footer class="bar bottom" id="footer" hidden>
+    <div class="palette" id="palette" role="toolbar" aria-label="Colors"></div>
+    <div class="actions">
+      <button class="btn small" id="undoBtn">↶ Undo</button>
+      <button class="btn small" id="clearBtn">Clear</button>
+      <div class="spacer"></div>
+      <button class="btn small" id="soundBtn" aria-pressed="true" title="Sound on/off">🔊</button>
+      <button class="btn small" id="svgBtn" title="Download as SVG">SVG</button>
+      <button class="btn small primary" id="saveBtn">Save</button>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
