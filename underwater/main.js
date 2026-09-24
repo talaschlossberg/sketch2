@@ -283,6 +283,7 @@ const HOUSE = (() => {
     { to: 'dune', shape: 'rect', x: 2228, y: 1502, w: 84, h: 170, exit: { x: 2150, y: 1600 } },
     { to: 'clock', shape: 'circle', x: 1020, y: 858, r: 24, exit: { x: 930, y: 930 } },
     { to: 'sky', shape: 'rect', x: 862, y: 752, w: 76, h: 96, exit: { x: 880, y: 910 } },
+    { to: 'dark', shape: 'rect', x: 508, y: 1126, w: 64, h: 88, exit: { x: 470, y: 1270 } },
     { to: 'fridge', shape: 'rect', x: 1586, y: 862, w: 68, h: 158, exit: { x: 1520, y: 950 } },
   ];
 
@@ -474,7 +475,7 @@ const HOUSE = (() => {
   return {
     id: 'house', name: 'The House', swatch: ['#bcd2e8', '#efdcd2', '#e2552d'], bg: P.sky, viewH: 760,
     x0: 0, y0: 0, x1: W, y1: H, hw: 30, hh: 12, spawn: { x: 520, y: WL + 20 }, portals,
-    hint: 'You are a diver. Swim with the arrows. Anything glowing (a window, the fridge, a painting, the clock) leads elsewhere.',
+    hint: 'You are a diver. Swim with the arrows. Anything glowing (a window, the fridge, the bathroom mirror, a painting, the clock) leads elsewhere.',
     hits,
     move(p, inp, dt) { floatMove(this, p, inp, dt); },
     update(dt, t, frame, p) {
@@ -632,103 +633,140 @@ const NIGHT = (() => {
 })();
 
 // =====================================================================
-// 3. The Dune: a parasol walker
+// 3. The Long Day: a desert crossed from dawn (left) to night (right).
+//    You are a sand serpent: you swim through the sand and leap out of it.
+//    Under the sand the arrows steer; in the air you fall back in an arc.
 // =====================================================================
 const DUNE = (() => {
-  const W = 5200, H = 1400;
-  const P = { sky: ['#f7dcc4', '#f4ccb2', '#f0bba3', '#eaa994', '#e39a8c'], sand: '#e9b67f', sandDark: '#d99a62', far: '#c98a86', mid: '#dca577', mono: '#2a2320', teal: '#2f8f8a', cream: '#fbf1dc', red: '#d2472c', blue: '#2e62b0' };
-  const groundAt = (x) => {
-    let g = 1000 + Math.sin(x * 0.0018) * 120 + Math.sin(x * 0.0047 + 1) * 60 + Math.sin(x * 0.011) * 14;
-    g -= Math.max(0, 260 - x) * 1.6 + Math.max(0, x - (W - 260)) * 1.6;
-    return g;
-  };
-  const sandTex = stipple(P.sand, ['#dfa56c', '#f1c690', '#d69458', '#f6d3a4'], 1500, 96, 0.5, 1.3, 21);
-  const monoliths = [];
-  for (let x = 700; x < W - 400; x += rr(380, 700)) {
-    if (Math.abs(x - 2600) < 260 || Math.abs(x - 4600) < 220) continue;
-    monoliths.push({ x, kind: pick(['slab', 'slab', 'sphere', 'arch', 'stack']), h: rr(180, 320), tilt: rr(-0.08, 0.08) });
+  const W = 7200, H = 1700, HORIZON = 860;
+  const surface = (x) => 1000 + Math.sin(x * 0.0011) * 90 + Math.sin(x * 0.0029 + 2) * 40;
+  // the time of day at each point of the crossing: sky, sand, and ink colours
+  const KEYS = [
+    { t: 0.0, sky: [243, 214, 200], sand: [232, 201, 168], far: [214, 170, 160] },
+    { t: 0.35, sky: [214, 229, 236], sand: [239, 220, 184], far: [206, 190, 170] },
+    { t: 0.65, sky: [236, 170, 128], sand: [217, 154, 114], far: [184, 112, 96] },
+    { t: 1.0, sky: [38, 42, 76], sand: [74, 70, 96], far: [52, 50, 80] },
+  ];
+  const mix = (a, b, u) => a.map((v, i) => Math.round(v + (b[i] - v) * u));
+  function colorsAt(tday) {
+    tday = Math.round(clamp(tday, 0, 1) * 24) / 24;          // the light changes in steps, like hours
+    let k = 0; while (k < KEYS.length - 2 && tday > KEYS[k + 1].t) k++;
+    const a = KEYS[k], b = KEYS[k + 1], u = (tday - a.t) / (b.t - a.t);
+    const rgb = (key) => `rgb(${mix(a[key], b[key], clamp(u, 0, 1)).join(',')})`;
+    return { sky: rgb('sky'), sand: rgb('sand'), far: rgb('far'), dark: tday > 0.8 };
   }
-  const weeds = Array.from({ length: 7 }, (_, i) => ({ x: rr(400, W - 400), y: 0, vy: 0, r: rr(16, 28), spin: 0, speed: rr(60, 110), seed: i }));
-  const streaks = Array.from({ length: 40 }, () => ({ x: rr(0, W), y: rr(700, 1150), l: rr(20, 60), v: rr(160, 280) }));
-  const farMesas = []; for (let x = -400; x < W; x += rr(300, 600)) farMesas.push({ x, w: rr(200, 420), h: rr(90, 190) });
-  const door = (to, x, w, h, shape = 'rect', color) => ({ to, shape, x, y: groundAt(x + w / 2) - h, w, h, exit: { x: x + w + 90 }, door: color });
-  const portals = [door('house', 300, 70, 150, 'rect', P.blue), door('shapes', 2520, 170, 190, 'tri'), door('stand', 4560, 70, 150, 'rect', P.red)];
-  portals[2].exit = { x: 4460 };
+  const grain = stipple(null, ['rgba(120, 80, 50, 0.25)', 'rgba(255, 255, 255, 0.3)', 'rgba(90, 60, 40, 0.2)'], 900, 96, 0.5, 1.3, 71);
+  const obelisks = []; for (let x = 500; x < W - 300; x += 600) obelisks.push({ x, h: 300 });
+  const stars = Array.from({ length: 220 }, () => ({ x: rr(0, W), y: rr(0, HORIZON), s: rr(1.5, 3.5) }));
+  const buried = Array.from({ length: 26 }, (_, i) => ({ x: 200 + i * 270 + rr(-40, 40), d: rr(120, 480), kind: i % 3, rot: rand() * 3 }));
+  const portals = [
+    { to: 'house', shape: 'circle', x: 760, y: surface(760) + 280, r: 62, exit: { x: 980, y: surface(980) + 200 } },
+    { to: 'shapes', shape: 'tri', x: 2530, y: surface(2600) + 220, w: 150, h: 130, exit: { x: 2800, y: surface(2800) + 200 } },
+    { to: 'sky', shape: 'circle', x: 3600, y: surface(3600) - 230, r: 80, exit: { x: 3760, y: surface(3760) + 120 } },
+    { to: 'stand', shape: 'rect', x: 4700, y: surface(4760) + 200, w: 110, h: 110, exit: { x: 4960, y: surface(4960) + 200 } },
+    { to: 'dark', shape: 'rect', x: 6400, y: surface(6450) + 220, w: 90, h: 130, exit: { x: 6250, y: surface(6250) + 200 } },
+  ];
+  const SEG = 18;
   return {
-    id: 'dune', name: 'The Dune', swatch: ['#f3c3a6', '#e9b67f', '#2a2320'], bg: P.sky[0], viewH: 760,
-    x0: 0, y0: 0, x1: W, y1: H, hw: 14, hh: 58, gravity: 1500, jump: 640, walk: 240, stepUp: 16,
-    spawn: { x: 470 }, portals, groundAt,
-    hint: 'You walk under a parasol. ← → walk, ↑ jumps.',
-    place(p, spot) { p.x = spot.x; p.y = groundAt(spot.x); p.s.grounded = true; },
-    center: (p) => ({ x: p.x, y: p.y - 30 }),
-    move(p, inp, dt) { walkMove(this, p, inp, dt); },
-    update(dt) {
-      for (const w of weeds) {
-        w.x += w.speed * dt; if (w.x > W - 200) w.x = 300;
-        const g = groundAt(w.x) - w.r;
-        w.vy += 1200 * dt; w.y += w.vy * dt;
-        if (w.y > g) { w.y = g; w.vy = -rr(220, 380); }
-        w.spin += w.speed * dt / w.r;
+    id: 'dune', name: 'The Long Day', swatch: ['#efdcb8', '#e9a07c', '#262a4c'], bg: '#f3d6c8', viewH: 1000,
+    x0: 0, y0: 0, x1: W, y1: H, spawn: { x: 980, y: surface(980) + 200 }, portals,
+    hint: 'You are a sand serpent. Swim through the sand with the arrows and leap out of it. Dawn is left, night is right.',
+    place(p, spot) { p.x = spot.x; p.y = spot.y; p.vx = 160; p.vy = -40; p.s.body = Array.from({ length: SEG * 4 }, (_, i) => ({ x: spot.x - i * 5, y: spot.y })); p.s.spray = []; },
+    move(p, inp, dt) {
+      const s = p.s, g = surface(p.x), under = p.y > g;
+      let { ix, iy } = inp;
+      const a = aimAt(p, 30); if (a) ({ ix, iy } = a);
+      if (under) {
+        p.vx += ix * 1000 * dt; p.vy += iy * 1000 * dt;
+        p.vx *= Math.exp(-1.1 * dt); p.vy *= Math.exp(-1.1 * dt);
+        const sp = Math.hypot(p.vx, p.vy);
+        if (sp < 170) { const k = 170 / Math.max(sp, 1); p.vx = (p.vx || p.face) * k; p.vy *= k; }   // it never stops swimming
+        if (sp > 700) { p.vx *= 700 / sp; p.vy *= 700 / sp; }
+      } else {
+        p.vy += 900 * dt; p.vx += ix * 150 * dt;
       }
-      for (const s of streaks) { s.x += s.v * dt; if (s.x > view.x + view.w + 100) { s.x = view.x - 100; s.y = rr(view.y, view.y + view.h); } }
+      const wasUnder = s.under;
+      p.x = clamp(p.x + p.vx * dt, 40, W - 40); p.y = clamp(p.y + p.vy * dt, 60, H - 60);
+      if (p.x <= 40 || p.x >= W - 40) p.vx = -p.vx;
+      if (p.y >= H - 60) p.vy = -Math.abs(p.vy);
+      s.under = p.y > surface(p.x);
+      if (wasUnder && !s.under && p.vy < 0) p.vy *= 1.6;   // breaching: the sand throws you up
+      if (wasUnder !== undefined && wasUnder !== s.under) for (let i = 0; i < 16; i++) s.spray.push({ x: p.x, y: surface(p.x), vx: rr(-160, 160) + p.vx * 0.3, vy: rr(-420, -160), life: rr(0.5, 0.9) });
+      for (const d of s.spray) { d.vy += 1300 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.life -= dt; }
+      s.spray = s.spray.filter((d) => d.life > 0);
+      if (Math.abs(p.vx) > 20) p.face = Math.sign(p.vx);
+      // the body follows the head's path
+      const b = s.body; b.unshift({ x: p.x, y: p.y }); b.length = SEG * 4;
     },
-    draw(t, frame) {
-      const top = view.y - 20, bot = view.y + view.h + 20;
-      ctx.fillStyle = P.sky[P.sky.length - 1]; ctx.fillRect(view.x - 20, top, view.w + 40, bot - top);
-      P.sky.forEach((c, i) => { if (i === P.sky.length - 1) return; const y0 = i === 0 ? -2000 : i * 160; ctx.fillStyle = c; ctx.fillRect(view.x - 20, y0, view.w + 40, (i + 1) * 160 - y0); });
-      const sx = par(2600, 0.1), sy = 330;
-      circle(sx, sy, 190, P.cream, false);
-      ink(2, '#f0c9a8'); for (let r = 210; r < 330; r += 26) { ctx.beginPath(); ctx.arc(sx, sy, r, Math.PI, 0); ctx.stroke(); }
-      for (const m of farMesas) { const x = par(m.x, 0.35); const base = 920; poly([[x, base], [x + 30, base - m.h], [x + m.w - 30, base - m.h], [x + m.w, base]], P.far); }
-      ctx.fillStyle = P.far; ctx.fillRect(view.x - 20, 918, view.w + 40, 400);
-      ctx.fillStyle = P.mid; ctx.beginPath(); ctx.moveTo(view.x - 20, bot);
-      for (let x = view.x - 20; x <= view.x + view.w + 20; x += 20) { const lx = x - view.x * 0.35; ctx.lineTo(x, 960 + Math.sin(lx * 0.004) * 50 + Math.sin(lx * 0.0093) * 22); }
-      ctx.lineTo(view.x + view.w + 20, bot); ctx.closePath(); ctx.fill();
-      ink(1.4, '#f8e2cc');
-      for (let k = 0; k < 4; k++) { const y = 900 + k * 14, ph = (frame % 2) * 12; ctx.beginPath(); for (let x = view.x; x < view.x + view.w; x += 12) ctx.lineTo(x, y + Math.sin((x + ph + k * 30) * 0.05) * 2.5); ctx.stroke(); }
-      for (const m of monoliths) {
-        if (!visible(m.x, 300)) continue;
-        const g = groundAt(m.x);
-        ctx.save(); ctx.translate(m.x, g + 10); ctx.rotate(m.tilt);
-        if (m.kind === 'slab') { ctx.fillStyle = P.mono; ctx.fillRect(-34, -m.h, 68, m.h); }
-        else if (m.kind === 'sphere') circle(0, -m.h * 0.35, m.h * 0.42, P.teal, false);
-        else if (m.kind === 'arch') { ink(34, P.red); ctx.lineCap = 'butt'; ctx.beginPath(); ctx.arc(0, 0, m.h * 0.55, Math.PI, 0); ctx.stroke(); }
-        else { circle(0, -40, 40, P.blue, false); ctx.fillStyle = P.cream; ctx.fillRect(-26, -150, 52, 70); circle(0, -178, 28, P.red, false); }
+    update() {},
+    draw(t, frame, st, p) {
+      const tday = (view.x + view.w / 2) / W;
+      const C = colorsAt(tday);
+      const top = view.y - 20, bot = view.y + view.h + 20, x0 = view.x - 20, x1 = view.x + view.w + 20;
+      ctx.fillStyle = C.sky; ctx.fillRect(x0, top, x1 - x0, bot - top);
+      if (C.dark) { ctx.fillStyle = '#f4e9b8'; for (const s of stars) if (s.x > x0 && s.x < x1) ctx.fillRect(s.x, s.y, s.s, s.s); }
+      // the sun (or moon) rides an arc overhead as the day passes
+      const arc = Math.PI * clamp(tday / 0.85, 0, 1);
+      const sx = view.x + view.w * 0.5 - Math.cos(arc) * view.w * 0.42, sy = HORIZON - Math.sin(arc) * 520;
+      if (!C.dark) circle(sx, sy, 90, '#fff4dc', false);
+      else { circle(view.x + view.w * 0.7, 260, 70, '#f1e6c8', false); circle(view.x + view.w * 0.7 + 26, 250, 62, C.sky, false); }
+      // a flat far range, then the mirage: a shimmering strip that repeats the obelisks upside down
+      ctx.fillStyle = C.far; ctx.fillRect(x0, HORIZON - 40, x1 - x0, bot - HORIZON + 40);
+      ctx.fillStyle = C.sky; ctx.globalAlpha = 0.55; ctx.fillRect(x0, HORIZON, x1 - x0, 60); ctx.globalAlpha = 1;
+      for (const o of obelisks) {
+        if (o.x < x0 - 400 || o.x > x1 + 400) continue;
+        const mx = par(o.x, 0.5), wob = frame % 2 ? 2 : -2;
+        ctx.globalAlpha = 0.35; ctx.fillStyle = C.far;
+        for (let k = 0; k < 6; k++) ctx.fillRect(mx - 8 + (k % 2 ? wob : -wob), HORIZON + 4 + k * 8, 16, 5);
+        ctx.globalAlpha = 1;
+      }
+      // the sand, with strata you can swim through
+      const sandPath = () => { ctx.beginPath(); ctx.moveTo(x0, bot + 200); for (let x = x0; x <= x1; x += 12) ctx.lineTo(x, surface(x)); ctx.lineTo(x1, bot + 200); ctx.closePath(); };
+      sandPath(); ctx.fillStyle = C.sand; ctx.fill();
+      ctx.save(); sandPath(); ctx.clip();
+      ctx.fillStyle = grain; ctx.fillRect(x0, top, x1 - x0, bot - top);
+      ink(2, 'rgba(90, 60, 40, 0.18)');
+      for (let d = 60; d < 700; d += 70) { ctx.beginPath(); for (let x = x0; x <= x1; x += 16) ctx.lineTo(x, surface(x) + d + Math.sin(x * 0.004 + d) * 12); ctx.stroke(); }
+      for (const b of buried) {       // stones and bones, deep in the sand
+        if (b.x < x0 - 60 || b.x > x1 + 60) continue;
+        const y = surface(b.x) + b.d;
+        ctx.save(); ctx.translate(b.x, y); ctx.rotate(b.rot);
+        if (b.kind === 0) poly(ngon(0, 0, 22, 5, 0), 'rgba(90, 60, 40, 0.3)');
+        else if (b.kind === 1) { ink(6, 'rgba(250, 240, 220, 0.6)'); ctx.beginPath(); ctx.moveTo(-26, 0); ctx.lineTo(26, 0); ctx.stroke(); circle(-28, -5, 6, 'rgba(250,240,220,0.6)', false); circle(28, 5, 6, 'rgba(250,240,220,0.6)', false); }
+        else { ink(3, 'rgba(90, 60, 40, 0.3)'); ctx.beginPath(); ctx.arc(0, 0, 18, 0, 7); ctx.stroke(); }
         ctx.restore();
       }
-      for (const q of portals) {
-        if (q.door) { ctx.fillStyle = q.door; ctx.fillRect(q.x - 10, q.y - 10, q.w + 20, 10); ctx.fillRect(q.x - 10, q.y, 10, q.h); ctx.fillRect(q.x + q.w, q.y, 10, q.h); }
-        else { poly([[q.x + q.w / 2, q.y - 22], [q.x + q.w + 20, q.y + q.h], [q.x - 20, q.y + q.h]], P.mono); }
-        drawPortal(q, frame, { labelAbove: true });
+      for (const q of portals) if (q.to !== 'sky') drawPortal(q, frame, { lineColor: '#fff4dc' });
+      // the wake: when you swim near the surface, the sand bulges above you
+      if (p.s.under && p.y - surface(p.x) < 180) {
+        const ax = p.x, ay = surface(ax);
+        poly([[ax - 60, ay + 2], [ax - 20, ay - 12], [ax + 20, ay - 12], [ax + 60, ay + 2]], C.sand);
       }
-      const x0 = view.x - 20, x1 = view.x + view.w + 20;
-      ctx.fillStyle = sandTex; ctx.beginPath(); ctx.moveTo(x0, bot + 400);
-      for (let x = x0; x <= x1; x += 10) ctx.lineTo(x, groundAt(x));
-      ctx.lineTo(x1, bot + 400); ctx.closePath(); ctx.fill();
-      ink(1.5, P.sandDark);
-      for (let x = Math.floor(x0 / 90) * 90; x < x1; x += 90) for (let d = 1; d <= 3; d++) { const y = groundAt(x) + d * 34; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 22, y - 6, x + 44, y); ctx.stroke(); }
-      for (const w of weeds) {
-        if (!visible(w.x)) continue;
-        ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(Math.floor(w.spin * 3) / 3);
-        ink(1.6, '#8a5a36');
-        const r2 = mulberry32(w.seed + 50);
-        ctx.beginPath(); for (let i = 0; i < 14; i++) { const a = r2() * 6.28, b = r2() * 6.28; ctx.moveTo(Math.cos(a) * w.r, Math.sin(a) * w.r); ctx.quadraticCurveTo(0, 0, Math.cos(b) * w.r, Math.sin(b) * w.r); } ctx.stroke();
-        ctx.beginPath(); ctx.arc(0, 0, w.r, 0, 7); ctx.stroke();
-        ctx.restore();
-      }
-      ink(1.2, '#fbe6cf');
-      for (const s of streaks) { ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + s.l, s.y); ctx.stroke(); }
-    },
-    avatar(p, frame, moving) {
-      const k = moving && p.s.grounded ? (frame % 2 ? 1 : -1) : 0;
-      ctx.save(); ctx.translate(p.x, p.y); ctx.scale(p.face, 1);
-      ink(3); ctx.beginPath(); ctx.moveTo(-3, -26); ctx.lineTo(-6 - k * 7, 0); ctx.moveTo(3, -26); ctx.lineTo(6 + k * 7, 0); ctx.stroke();
-      poly([[0, -70], [16, -22], [-16, -22]], P.cream); ink(1.4); ctx.stroke();
-      circle(0, -80, 10, '#8a5a36', false);
-      ink(2); ctx.beginPath(); ctx.moveTo(6, -54); ctx.lineTo(14, -112); ctx.stroke();
-      ctx.save(); ctx.translate(14, -112); ctx.rotate(0.15);
-      for (let i = 0; i < 6; i++) { ctx.fillStyle = i % 2 ? P.cream : P.red; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 40, Math.PI + (i * Math.PI) / 6, Math.PI + ((i + 1) * Math.PI) / 6); ctx.closePath(); ctx.fill(); }
       ctx.restore();
+      ink(2, 'rgba(90, 60, 40, 0.35)'); ctx.beginPath(); for (let x = x0; x <= x1; x += 12) ctx.lineTo(x, surface(x)); ctx.stroke();
+      // obelisks in a strict row, their shadows stretching and swinging with the sun
+      const sunDX = Math.cos(arc), sunH = Math.max(0.12, Math.sin(arc));
+      for (const o of obelisks) {
+        if (o.x < x0 - 1200 || o.x > x1 + 1200) continue;
+        const g = surface(o.x), len = Math.min(900, o.h / sunH * 0.5), dir = sunDX > 0 ? -1 : 1;
+        ctx.fillStyle = 'rgba(60, 40, 40, 0.28)';
+        ctx.beginPath(); ctx.moveTo(o.x - 20, g); ctx.lineTo(o.x + 20, g); ctx.lineTo(o.x + 20 + dir * len, g + 26); ctx.lineTo(o.x - 20 + dir * len, g + 26); ctx.closePath(); ctx.fill();
+        poly([[o.x - 22, g + 6], [o.x + 22, g + 6], [o.x + 16, g - o.h], [o.x, g - o.h - 30], [o.x - 16, g - o.h]], C.dark ? '#1c1c2c' : '#2a2320');
+      }
+      drawPortal(portals.find((q) => q.to === 'sky'), frame, { lineColor: '#fff4dc' });
+      // sand thrown up where you break the surface
+      ctx.fillStyle = C.sand; for (const d of p.s.spray || []) ctx.fillRect(d.x - 4, d.y - 4, 8, 8);
+    },
+    avatar(p, frame) {
+      // a banded serpent; only the parts above the sand are drawn
+      const b = p.s.body; if (!b) return;
+      const bands = ['#f4efe3', '#c9442a', '#262a4c'];
+      ctx.save();
+      ctx.beginPath(); ctx.moveTo(view.x - 20, view.y - 20); for (let x = view.x - 20; x <= view.x + view.w + 20; x += 12) ctx.lineTo(x, surface(x)); ctx.lineTo(view.x + view.w + 20, view.y - 20); ctx.closePath(); ctx.clip();
+      for (let i = SEG - 1; i >= 0; i--) { const q = b[i * 4]; if (!q) continue; circle(q.x, q.y, 18 - i * 0.6, bands[i % 3], true, 1.4); }
+      const hd = b[0], nx = b[3] || hd, a = Math.atan2(hd.y - nx.y, hd.x - nx.x);
+      circle(hd.x + Math.cos(a) * 8 - Math.sin(a) * 6, hd.y + Math.sin(a) * 8 + Math.cos(a) * 6, 4, INK, false);
+      if (frame % 3 === 0) { ink(2, '#c9442a'); ctx.beginPath(); ctx.moveTo(hd.x + Math.cos(a) * 18, hd.y + Math.sin(a) * 18); ctx.lineTo(hd.x + Math.cos(a) * 32, hd.y + Math.sin(a) * 32); ctx.stroke(); }
       ctx.restore();
     },
   };
@@ -1436,8 +1474,124 @@ const FRIDGE = (() => {
   };
 })();
 
-const WORLDS = { sky: SKY, fridge: FRIDGE, house: HOUSE, night: NIGHT, dune: DUNE, stand: STAND, clock: CLOCK, shapes: SHAPES, orbit: ORBIT, mirror: MIRROR };
-const WORLD_ORDER = ['house', 'night', 'dune', 'stand', 'clock', 'shapes', 'orbit', 'mirror', 'sky', 'fridge'];
+// =====================================================================
+// 11. The Darkroom: a moth under the red safelight. Prints hang on lines
+//     and slowly develop while the moth flutters near them. Moths drift
+//     towards light when you let go. Add your own photos with the button.
+// =====================================================================
+const PHOTO_FILES = [];   // file names in ./photos/, e.g. ['beach.jpg', 'grandma.png']
+function duotone(img) {
+  const s = Math.min(1, 360 / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * s)), h = Math.max(1, Math.round(img.height * s));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0, w, h);
+  try {
+    const d = g.getImageData(0, 0, w, h), px = d.data, r = mulberry32(w * 31 + h);
+    const dark = [46, 22, 24], light = [246, 234, 220];
+    for (let i = 0; i < px.length; i += 4) {
+      let l = (0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2]) / 255;
+      l = Math.round(clamp(l + (r() - 0.5) * 0.12, 0, 1) * 5) / 5;   // grainy, in five tones
+      px[i] = dark[0] + (light[0] - dark[0]) * l; px[i + 1] = dark[1] + (light[1] - dark[1]) * l; px[i + 2] = dark[2] + (light[2] - dark[2]) * l;
+    }
+    g.putImageData(d, 0, 0);
+  } catch (e) { /* a picture from elsewhere that can't be read back: keep it as it is */ }
+  return c;
+}
+const DARK = (() => {
+  const W = 3400, H = 1400, FLOOR = 1250;
+  const LINES = [360, 780];
+  const prints = [];
+  for (const y of LINES) for (let x = 520; x < W - 700; x += 340) prints.push({ x, y, dev: 0, img: null, n: prints.length + 1, sway: rand() * 6 });
+  function hang(img) {
+    const c = duotone(img);
+    const slot = prints.find((q) => !q.img) || (() => { const q = { x: 520 + (prints.length % 7) * 340, y: LINES[Math.floor(prints.length / 7) % 2] + 60 * Math.floor(prints.length / 14), dev: 0, n: prints.length + 1, sway: rand() * 6 }; prints.push(q); return q; })();
+    slot.img = c; slot.dev = 0;
+  }
+  const load = (src) => { const im = new Image(); im.onload = () => hang(im); im.src = src; };
+  for (const src of (window.PHOTO_DATA || PHOTO_FILES.map((f) => 'photos/' + f))) load(src);
+  const portals = [
+    { to: 'house', shape: 'circle', x: 2900, y: 640, r: 50, exit: { x: 2780, y: 820 } },
+    { to: 'mirror', shape: 'rect', x: 1640, y: FLOOR - 70, w: 200, h: 44, exit: { x: 1740, y: FLOOR - 200 } },
+    { to: 'dune', shape: 'rect', x: 130, y: FLOOR - 260, w: 110, h: 260, exit: { x: 330, y: FLOOR - 160 } },
+  ];
+  const safelight = { x: 1150, y: 120 };
+  return {
+    id: 'dark', name: 'The Darkroom', swatch: ['#4a1111', '#e2552d', '#f6eadc'], bg: '#3d0f0f', viewH: 900,
+    x0: 0, y0: 0, x1: W, y1: H, spawn: { x: 2780, y: 820 }, portals, hint: 'You are a moth. Flutter near the prints to develop them. Let go and you drift towards the light.',
+    hang,
+    place(p, spot) { p.x = spot.x; p.y = spot.y; },
+    move(p, inp, dt) {
+      let { ix, iy } = inp;
+      const a = aimAt(p, 24); if (a) ({ ix, iy } = a);
+      const idle = !ix && !iy;
+      // flutter: the moth never flies straight
+      const jx = Math.sin(t * 13.1 + 1) * 0.7 + Math.sin(t * 5.3) * 0.5, jy = Math.sin(t * 11.7) * 0.8 + Math.cos(t * 4.1) * 0.4;
+      p.vx += (ix * 700 + jx * 380) * dt; p.vy += (iy * 700 + jy * 380) * dt;
+      if (idle) {   // drawn to the nearest light: a developed print, or the safelight
+        let best = safelight, bd = Math.hypot(safelight.x - p.x, safelight.y - p.y);
+        for (const q of prints) if (q.dev > 0.6) { const d = Math.hypot(q.x - p.x, q.y + 110 - p.y); if (d < bd) { bd = d; best = { x: q.x, y: q.y + 110 }; } }
+        p.vx += (best.x - p.x) / Math.max(bd, 1) * 160 * dt; p.vy += (best.y - p.y) / Math.max(bd, 1) * 160 * dt;
+      }
+      p.vx *= Math.exp(-2.4 * dt); p.vy *= Math.exp(-2.4 * dt);
+      p.x = clamp(p.x + p.vx * dt, 60, W - 60); p.y = clamp(p.y + p.vy * dt, 80, FLOOR - 30);
+      if (Math.abs(p.vx) > 20) p.face = Math.sign(p.vx);
+      for (const q of prints) if (Math.hypot(q.x - p.x, q.y + 110 - p.y) < 190) q.dev = Math.min(1, q.dev + dt * 0.45);
+    },
+    update() {},
+    draw(tt, frame) {
+      ctx.fillStyle = '#3d0f0f'; ctx.fillRect(view.x - 20, view.y - 20, view.w + 40, view.h + 40);
+      ctx.fillStyle = '#471414'; for (let x = 0; x < W; x += 60) ctx.fillRect(x, 0, 3, FLOOR);
+      // the safelight and its glow, in rings
+      for (const [r, a] of [[520, 0.06], [360, 0.08], [220, 0.12]]) circle(safelight.x, safelight.y + 40, r, `rgba(226, 85, 45, ${a})`, false);
+      ctx.fillStyle = '#1e1e1e'; ctx.fillRect(safelight.x - 3, 0, 6, safelight.y);
+      box(safelight.x - 50, safelight.y, 100, 60, '#e2552d', 2);
+      // drying lines with prints on pegs
+      for (const y of LINES) { ink(2, '#d9c7b8'); ctx.beginPath(); ctx.moveTo(300, y - 20); ctx.quadraticCurveTo(W / 2, y + 30, W - 400, y - 20); ctx.stroke(); }
+      for (const q of prints) {
+        const sway = Math.sin(q.sway + Math.floor(tt * 2) * 0.7) * 0.03;
+        const iw = q.img ? q.img.width : 4, ih = q.img ? q.img.height : 3;
+        const w = 220, h = w * ih / iw;
+        ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(sway);
+        ctx.fillStyle = '#f6eadc'; ctx.fillRect(-w / 2 - 10, 8, w + 20, h + 20);
+        ctx.globalAlpha = q.dev;
+        if (q.img) ctx.drawImage(q.img, -w / 2, 18, w, h);
+        else {
+          ctx.fillStyle = '#2e1618'; ctx.fillRect(-w / 2, 18, w, h);
+          ctx.fillStyle = '#f6eadc'; ctx.font = '500 26px Jost, Futura, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(`photo ${q.n}`, 0, 18 + h / 2);
+        }
+        ctx.globalAlpha = 1;
+        box(-30, 0, 14, 24, '#a67a55', 1); box(16, 0, 14, 24, '#a67a55', 1);
+        ctx.restore();
+      }
+      // the counter with three trays: developer, stop, fix
+      ctx.fillStyle = '#2a0b0b'; ctx.fillRect(view.x - 20, FLOOR, view.w + 40, 400);
+      box(1100, FLOOR - 40, 1300, 40, '#5a1a1a', 1.5);
+      for (const [x, c] of [[1200, '#8a2b22'], [1640, '#6e2a3a'], [2080, '#8a4a22']]) { box(x, FLOOR - 70, 200, 34, '#d9c7b8', 1.5); ctx.fillStyle = c; ctx.fillRect(x + 8, FLOOR - 64, 184, 22); }
+      // the enlarger: a column and a head, its lamp is the way home
+      ctx.fillStyle = '#1e1e1e'; ctx.fillRect(3040, 300, 22, FLOOR - 300); box(2840, 560, 220, 120, '#2a2a2a', 1.5); ctx.fillRect(2860, 680, 80, 40);
+      ctx.fillStyle = 'rgba(255, 244, 220, 0.12)'; poly([[2860, 720], [2940, 720], [3010, FLOOR - 40], [2790, FLOOR - 40]], 'rgba(255, 244, 220, 0.1)');
+      // the door out, with its red lamp
+      box(110, FLOOR - 280, 150, 280, '#2a0b0b', 2);
+      circle(185, FLOOR - 310, 16, frame % 4 < 2 ? '#ff5a3a' : '#a8321f', false);
+      for (const q of portals) drawPortal(q, frame, { lineColor: '#f6eadc', labelAbove: q.to !== 'house' });
+    },
+    avatar(p, frame) {
+      const flap = frame % 2 ? 1 : 0.35;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.scale(p.face * 1.3, 1.3);
+      ctx.fillStyle = '#e9dcc8';
+      ctx.beginPath(); ctx.ellipse(-10, -10 * flap, 20, 26 * flap + 4, -0.5, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(10, -10 * flap, 20, 26 * flap + 4, 0.5, 0, 7); ctx.fill();
+      ctx.fillStyle = '#b9a58c'; circle(-12, -12 * flap, 5, '#b9a58c', false); circle(12, -12 * flap, 5, '#b9a58c', false);
+      ctx.fillStyle = '#5a4636'; ctx.beginPath(); ctx.ellipse(0, 0, 5, 16, 0, 0, 7); ctx.fill();
+      ink(1.4, '#5a4636'); ctx.beginPath(); ctx.moveTo(-2, -14); ctx.quadraticCurveTo(-8, -26, -14, -26); ctx.moveTo(2, -14); ctx.quadraticCurveTo(8, -26, 14, -26); ctx.stroke();
+      ctx.restore();
+    },
+  };
+})();
+
+const WORLDS = { dark: DARK, sky: SKY, fridge: FRIDGE, house: HOUSE, night: NIGHT, dune: DUNE, stand: STAND, clock: CLOCK, shapes: SHAPES, orbit: ORBIT, mirror: MIRROR };
+const WORLD_ORDER = ['house', 'night', 'dune', 'stand', 'clock', 'shapes', 'orbit', 'mirror', 'sky', 'fridge', 'dark'];
 
 // =====================================================================
 // Player, input, travel
@@ -1448,11 +1602,14 @@ const player = { x: 0, y: 0, vx: 0, vy: 0, face: 1, target: null, s: {}, armed: 
 let state = 'menu';
 const keys = new Set(), pressed = new Set();
 const $ = (id) => document.getElementById(id);
-const ui = { hud: $('hudRoot'), start: $('startScreen'), num: $('worldNum'), name: $('worldName'), toast: $('toast'), focusHint: $('focusHint') };
+const ui = { addPhotos: $('addPhotos'), hud: $('hudRoot'), start: $('startScreen'), num: $('worldNum'), name: $('worldName'), toast: $('toast'), focusHint: $('focusHint') };
 
 let toastTimer = 0;
 function toast(msg, secs = 5) { ui.toast.textContent = msg; ui.toast.classList.add('on'); toastTimer = secs; }
-function labelWorld() { ui.num.textContent = String(WORLD_ORDER.indexOf(world.id) + 1); ui.name.textContent = world.name; }
+function labelWorld() {
+  ui.num.textContent = String(WORLD_ORDER.indexOf(world.id) + 1); ui.name.textContent = world.name;
+  ui.addPhotos.hidden = world.id !== 'dark';
+}
 
 function enterWorld(next, from) {
   world = next;
@@ -1474,6 +1631,13 @@ function start() {
   takeFocus();
 }
 $('startBtn').addEventListener('click', start);
+// your own photos, hung in the darkroom for this visit
+$('photoInput').addEventListener('change', (e) => {
+  for (const file of e.target.files) { const im = new Image(); im.onload = () => DARK.hang(im); im.src = URL.createObjectURL(file); }
+  e.target.value = '';
+  toast('Hung on the line. Flutter near them to develop them.');
+  takeFocus();
+});
 
 // travel: a paper card slides across, the world changes behind it, the card slides away
 const travel = { t: -1, to: null, from: null, swapped: false };

@@ -36,6 +36,10 @@
   #toast { left: 50%; top: calc(16px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); font-size: 15px; font-weight: 500; letter-spacing: 0.03em;
     background: var(--paper); border: 2px solid var(--ink); padding: 8px 16px; opacity: 0; transition: opacity 0.4s; width: max-content; max-width: calc(100% - 32px); text-align: center; box-sizing: border-box; }
   #toast.on { opacity: 1; }
+  #addPhotos { position: fixed; right: 14px; top: calc(14px + env(safe-area-inset-top, 0px)); background: var(--red); color: var(--paper);
+    font: 500 15px var(--font); letter-spacing: 0.08em; padding: 10px 16px; border-radius: 6px; cursor: pointer; }
+  #addPhotos:hover { background: var(--ink); }
+  #addPhotos:focus-within { outline: 3px solid var(--blue); outline-offset: 2px; }
   #focusHint { left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); font-size: 14px; font-weight: 500;
     background: var(--red); color: var(--paper); padding: 8px 14px; border-radius: 6px; white-space: nowrap; }
   @media (max-width: 560px) { #focusHint { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } #where { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } }
@@ -86,6 +90,7 @@
 <div id="hudRoot" hidden>
   <div id="where" class="hud"><b id="worldNum">1</b><span id="worldName">The House</span></div>
   <div id="toast" class="hud"></div>
+  <label id="addPhotos" hidden>Add photos<input id="photoInput" type="file" accept="image/*" multiple hidden></label>
   <div id="focusHint" class="hud" hidden>Click the house to use your arrow keys</div>
   <div id="pad" aria-label="Swim controls">
     <button type="button" data-dir="up" aria-label="Swim up"><svg viewBox="0 0 18 18"><path d="M9 3 L16 14 L2 14 Z" fill="#1e1e1e"/></svg></button>
@@ -98,10 +103,10 @@
 <div id="startScreen" class="screen">
   <div class="panel">
     <div class="head">
-      <div class="num"><b>10</b></div>
-      <div><p class="eyebrow">Ten places, ten ways to move</p><h1>Deep House</h1></div>
+      <div class="num"><b>11</b></div>
+      <div><p class="eyebrow">Eleven places, eleven ways to move</p><h1>Deep House</h1></div>
     </div>
-    <p>The house is full of water, and things in it open onto other places: a sky full of birds, the inside of the fridge, a night sky, a dune, a grandstand, a clock face, a plain of shapes, a solar system and a kaleidoscope. In each one you become something else and move a different way, and every place has doors onward. Nothing to win. Just wander.</p>
+    <p>The house is full of water, and things in it open onto other places: a sky full of birds, the inside of the fridge, a darkroom, a night sky, a desert day, a grandstand, a clock face, a plain of shapes, a solar system and a kaleidoscope. In each one you become something else and move a different way, and every place has doors onward. Nothing to win. Just wander.</p>
     <ul class="legend">
       <li>
         <svg viewBox="0 0 64 48" aria-hidden="true"><rect x="22" y="4" width="20" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><path d="M32 8 L37 16 L27 16 Z" fill="#1e1e1e"/><rect x="4" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><rect x="24" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><rect x="44" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/></svg>
