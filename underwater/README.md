@@ -1,6 +1,6 @@
 # Blue Hollow
 
-A first-person underwater dive built with three.js (loaded from a CDN, no build step).
+A first-person underwater dive in a mid-century paper-cutout style, built with three.js (loaded from a CDN, no build step).
 
 Open `index.html` through any local web server, for example:
 

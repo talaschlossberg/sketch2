@@ -6,117 +6,120 @@
 <title>Blue Hollow</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Fraunces:ital,opsz,wght@1,9..144,600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,400;0,500;0,700;0,800;1,700&display=swap">
 <style>
   :root {
-    color-scheme: dark;
-    --abyss: #031823;
-    --tide: #0f5f78;
-    --glow: #7ff3e6;
-    --pearl: #f4e9dc;
-    --coral: #ff6b5a;
-    --ink: rgba(3, 24, 35, 0.62);
-    --hud: "Chakra Petch", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    --display: "Fraunces", Georgia, "Times New Roman", serif;
+    color-scheme: light;
+    --paper: #f2e6cf;
+    --paper-2: #e8d8b9;
+    --ink: #1f2a2e;
+    --teal: #2f7f7a;
+    --deep: #1c4a4f;
+    --mustard: #e0a526;
+    --tomato: #d9572b;
+    --pink: #e8a3a0;
+    --cut: 4px 5px 0 rgba(20, 34, 36, 0.38);
+    --font: "Jost", "Futura", "Century Gothic", "Avenir Next", system-ui, sans-serif;
   }
   [hidden] { display: none !important; }
-  html, body { height: 100%; margin: 0; background: var(--abyss); color: var(--pearl); overflow: hidden; }
-  body { font-family: var(--hud); -webkit-user-select: none; user-select: none; touch-action: none; }
+  html, body { height: 100%; margin: 0; background: var(--deep); color: var(--ink); overflow: hidden; }
+  body { font-family: var(--font); -webkit-user-select: none; user-select: none; touch-action: none; }
   #game { position: fixed; inset: 0; }
   #game canvas { display: block; width: 100%; height: 100%; }
 
-  .vignette { position: fixed; inset: 0; pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 45%, rgba(1, 10, 16, 0.55) 100%); }
   #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0;
-    background: radial-gradient(ellipse at center, transparent 30%, rgba(255, 107, 90, 0.55) 100%);
-    transition: opacity 0.6s ease-out; }
-  #flash.on { opacity: 1; transition: none; }
+    box-shadow: inset 0 0 0 26px var(--tomato); transition: opacity 0.6s ease-out; }
+  #flash.on { opacity: 0.85; transition: none; }
 
-  /* Dive computer HUD */
+  /* Paper HUD */
   .hud { position: fixed; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .card { background: var(--paper); color: var(--ink); box-shadow: var(--cut); }
   #readout { top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px;
-    display: grid; grid-template-columns: auto auto; gap: 2px 14px; align-items: baseline;
-    padding: 10px 14px; background: var(--ink); border: 1px solid rgba(127, 243, 230, 0.25); border-radius: 4px; }
-  #readout .k { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(127, 243, 230, 0.7); }
-  #readout .v { font-size: 20px; font-weight: 600; text-align: right; }
-  #readout .v small { font-size: 11px; font-weight: 400; margin-left: 3px; color: rgba(244, 233, 220, 0.7); }
+    display: grid; grid-template-columns: auto auto; gap: 0 16px; align-items: baseline;
+    padding: 12px 16px 12px; border-radius: 16px 16px 16px 4px; }
+  #readout .k { font-size: 11px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--teal); }
+  #readout .v { font-size: 21px; font-weight: 700; text-align: right; }
+  #readout .v small { font-size: 11px; font-weight: 500; margin-left: 3px; color: var(--teal); }
 
-  #sonar { top: calc(16px + env(safe-area-inset-top, 0px)); right: 16px; width: 92px;
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-    padding: 10px 8px; background: var(--ink); border: 1px solid rgba(127, 243, 230, 0.25); border-radius: 4px; }
-  #sonar svg { width: 56px; height: 56px; overflow: visible; }
-  #sonar .k { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(127, 243, 230, 0.7); }
-  #sonarDist { font-size: 15px; font-weight: 600; }
+  #sonar { top: calc(16px + env(safe-area-inset-top, 0px)); right: 16px; width: 96px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 8px 12px; border-radius: 48px 48px 16px 16px; }
+  #sonar svg { width: 58px; height: 58px; overflow: visible; }
+  #sonar .k { font-size: 10px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--teal); }
+  #sonarDist { font-size: 16px; font-weight: 700; }
 
   #o2 { left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
-    width: min(360px, calc(100% - 32px)); display: grid; gap: 6px; }
-  #o2 .row { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(127, 243, 230, 0.8); }
-  #o2 .bar { height: 8px; background: rgba(3, 24, 35, 0.7); border: 1px solid rgba(127, 243, 230, 0.3); border-radius: 4px; overflow: hidden; }
-  #o2Fill { height: 100%; width: 100%; background: var(--glow); transform-origin: left; transition: background 0.3s; }
-  #o2.low #o2Fill { background: var(--coral); animation: pulse 0.8s infinite alternate; }
-  #o2.low .row { color: var(--coral); }
-  @keyframes pulse { to { opacity: 0.45; } }
+    width: min(360px, calc(100% - 32px)); display: grid; gap: 6px; padding: 10px 16px 14px; border-radius: 14px; }
+  #o2 .row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
+  #o2 .bar { height: 12px; background: var(--paper-2); border-radius: 6px; overflow: hidden; }
+  #o2Fill { height: 100%; width: 100%; background: var(--mustard); border-radius: 6px; transform-origin: left; transition: background 0.3s; }
+  #o2.low #o2Fill { background: var(--tomato); animation: pulse 0.8s infinite alternate; }
+  #o2.low .row { color: var(--tomato); }
+  @keyframes pulse { to { opacity: 0.5; } }
 
-  #toast { left: 50%; top: 30%; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--glow); opacity: 0; transition: opacity 0.4s; text-align: center;
-    text-shadow: 0 0 12px rgba(127, 243, 230, 0.6); }
+  #toast { left: 50%; top: 28%; transform: translateX(-50%) rotate(-2deg); font-size: 14px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; background: var(--mustard); color: var(--ink); padding: 8px 16px; border-radius: 3px;
+    box-shadow: var(--cut); opacity: 0; transition: opacity 0.35s; text-align: center; white-space: nowrap; }
   #toast.on { opacity: 1; }
 
-  #crosshair { left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%;
-    background: rgba(244, 233, 220, 0.6); }
+  #crosshair { left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--paper); opacity: 0.8; }
 
   /* Screens */
-  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
-    background: radial-gradient(ellipse at 50% 20%, rgba(15, 95, 120, 0.35), rgba(3, 24, 35, 0.88) 70%); }
-  .panel { width: min(460px, 100%); display: grid; gap: 18px; }
-  .eyebrow { font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--glow); margin: 0; }
-  h1 { font-family: var(--display); font-style: italic; font-weight: 600; font-size: clamp(48px, 12vw, 84px);
-    line-height: 0.9; margin: 0; color: var(--pearl); text-wrap: balance; letter-spacing: -0.02em; }
-  h2 { font-family: var(--display); font-style: italic; font-weight: 600; font-size: clamp(34px, 8vw, 52px);
-    line-height: 1; margin: 0; text-wrap: balance; }
-  .panel p { margin: 0; font-size: 15px; line-height: 1.55; color: rgba(244, 233, 220, 0.85); max-width: 60ch; }
-  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 13px; }
-  .keys dt { color: var(--glow); letter-spacing: 0.06em; }
-  .keys dd { margin: 0; color: rgba(244, 233, 220, 0.8); }
-  button.go { justify-self: start; font: 600 15px var(--hud); letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--abyss); background: var(--glow); border: 0; border-radius: 3px; padding: 12px 26px; cursor: pointer; }
-  button.go:hover { background: var(--pearl); }
-  button.go:focus-visible { outline: 2px solid var(--pearl); outline-offset: 3px; }
+  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(28, 74, 79, 0.55); }
+  .panel { position: relative; width: min(480px, 100%); display: grid; gap: 18px; padding: 34px 30px 30px;
+    background: var(--paper); border-radius: 22px 22px 22px 6px; box-shadow: 8px 10px 0 rgba(20, 34, 36, 0.45); box-sizing: border-box; }
+  .panel::before { content: ""; position: absolute; top: -34px; right: 34px; width: 92px; height: 92px; border-radius: 50%;
+    background: var(--mustard); box-shadow: var(--cut); z-index: -1; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; color: var(--tomato); margin: 0; }
+  h1 { font-weight: 800; font-size: clamp(52px, 13vw, 88px); line-height: 0.86; margin: 0; color: var(--deep);
+    letter-spacing: -0.03em; text-wrap: balance; text-shadow: 4px 4px 0 var(--pink); }
+  h2 { font-weight: 800; font-size: clamp(36px, 9vw, 54px); line-height: 0.95; margin: 0; color: var(--deep);
+    letter-spacing: -0.02em; text-wrap: balance; text-shadow: 3px 3px 0 var(--pink); }
+  .panel p { margin: 0; font-size: 16px; line-height: 1.5; color: var(--ink); max-width: 60ch; }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 14px;
+    padding-top: 14px; border-top: 2px dotted rgba(47, 127, 122, 0.5); }
+  .keys dt { color: var(--teal); font-weight: 700; letter-spacing: 0.06em; }
+  .keys dd { margin: 0; }
+  button.go { justify-self: start; font: 700 15px var(--font); letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--paper); background: var(--tomato); border: 0; border-radius: 999px; padding: 14px 30px; cursor: pointer;
+    box-shadow: 3px 4px 0 var(--ink); transition: transform 0.1s, box-shadow 0.1s; }
+  button.go:hover { background: var(--deep); }
+  button.go:active { transform: translate(3px, 4px); box-shadow: 0 0 0 var(--ink); }
+  button.go:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
 
   /* Touch controls */
   #touch { position: fixed; inset: 0; pointer-events: none; }
-  #touch .btns { position: absolute; right: 16px; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px; pointer-events: auto; }
-  #touch button { width: 58px; height: 58px; border-radius: 50%; font: 600 12px var(--hud); letter-spacing: 0.1em;
-    color: var(--pearl); background: rgba(3, 24, 35, 0.55); border: 1px solid rgba(127, 243, 230, 0.4); }
-  #touch button.on { background: rgba(127, 243, 230, 0.35); }
-  #stick { position: absolute; width: 90px; height: 90px; margin: -45px 0 0 -45px; border-radius: 50%;
-    border: 1px solid rgba(127, 243, 230, 0.4); background: rgba(3, 24, 35, 0.3); }
-  #stick i { position: absolute; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; background: rgba(127, 243, 230, 0.45); }
-  @media (max-width: 520px) { #readout .v { font-size: 16px; } #sonar { width: 80px; } }
+  #touch .btns { position: absolute; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 12px; pointer-events: auto; }
+  #touch button { width: 60px; height: 60px; border-radius: 50%; font: 700 12px var(--font); letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink); background: var(--paper); border: 0; box-shadow: var(--cut); }
+  #touch button.on { background: var(--mustard); transform: translate(2px, 3px); box-shadow: 1px 1px 0 rgba(20, 34, 36, 0.38); }
+  #stick { position: absolute; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 50%; background: rgba(242, 230, 207, 0.35); }
+  #stick i { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: var(--paper); box-shadow: var(--cut); }
+  @media (max-width: 520px) { #readout .v { font-size: 17px; } #sonar { width: 84px; } .panel { padding: 28px 22px 24px; } }
+  @media (prefers-reduced-motion: reduce) { #o2.low #o2Fill { animation: none; } }
 </style>
 </head>
 <body>
 <div id="game"></div>
-<div class="vignette"></div>
 <div id="flash"></div>
 
 <div id="hudRoot" hidden>
-  <div id="readout" class="hud">
+  <div id="readout" class="hud card">
     <span class="k">Depth</span><span class="v" id="hDepth">0.0<small>m</small></span>
     <span class="k">Press.</span><span class="v" id="hAta">1.0<small>ata</small></span>
     <span class="k">Temp</span><span class="v" id="hTemp">26<small>°C</small></span>
     <span class="k">Pearls</span><span class="v" id="hPearls">0<small>/ 0</small></span>
   </div>
-  <div id="sonar" class="hud">
+  <div id="sonar" class="hud card">
     <span class="k">Sonar</span>
     <svg viewBox="-30 -30 60 60" aria-hidden="true">
-      <circle r="27" fill="none" stroke="rgba(127,243,230,0.3)" stroke-width="1.5"/>
-      <circle r="14" fill="none" stroke="rgba(127,243,230,0.15)" stroke-width="1"/>
-      <g id="sonarArrow"><path d="M0,-24 L8,-6 L0,-10 L-8,-6 Z" fill="#7ff3e6"/></g>
+      <circle r="27" fill="#2f7f7a"/>
+      <circle r="17" fill="#1c4a4f"/>
+      <circle r="6" fill="#2f7f7a"/>
+      <g id="sonarArrow"><path d="M0,-25 L9,-5 L0,-10 L-9,-5 Z" fill="#e0a526"/></g>
     </svg>
     <span id="sonarDist">--</span>
   </div>
-  <div id="o2" class="hud">
+  <div id="o2" class="hud card">
     <div class="row"><span>O₂ Tank</span><span id="o2Val">100%</span></div>
     <div class="bar"><div id="o2Fill"></div></div>
   </div>
@@ -135,7 +138,7 @@
   <div class="panel">
     <p class="eyebrow">A lagoon dive · 20 pearls</p>
     <h1>Blue Hollow</h1>
-    <p>Clams on the floor of the hollow are holding pearls. Collect them all before your tank runs dry. Surface to breathe, and give the jellyfish room.</p>
+    <p>Clams on the floor of the hollow are holding pearls, each marked by a sparkle. Collect them all before your tank runs dry. Surface to breathe, and give the jellyfish room.</p>
     <dl class="keys" id="keyList">
       <dt>Mouse</dt><dd>Look (click to lock, Esc to release)</dd>
       <dt>W A S D</dt><dd>Swim</dd>
