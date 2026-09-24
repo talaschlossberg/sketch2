@@ -1,6 +1,6 @@
 # Blue Hollow
 
-A first-person underwater dive in a flat "shape land" cut-paper style, built with three.js (loaded from a CDN, no build step).
+A side-view dive through a flat, cut-paper lagoon, drawn with the 2D canvas (no libraries, no build step).
 
 Open `index.html` through any local web server, for example:
 
@@ -8,26 +8,20 @@ Open `index.html` through any local web server, for example:
     # then visit http://localhost:8000/underwater/
 
 ## Goal
-Collect the 20 pearls hidden in clams on the floor of the lagoon before your oxygen runs out.
-Surface to refill your tank, each pearl adds 10% O₂, and jellyfish stings cost 12%.
+Collect the 20 pearls from the clams along the seabed before your oxygen runs out.
+Swim up to the surface to refill your tank, each pearl adds 10% O₂, and jellyfish stings cost 12%.
 
 ## Controls
-- Mouse: look (click to lock the pointer, Esc to pause)
-- W A S D: swim · Space / C: rise / sink · Shift: kick harder (uses more air) · F: dive torch
-- Touch: left thumb swims, right thumb looks, Up / Dive buttons
+- Arrow keys: swim
+- Click or tap: swim to that spot, or to a clam
 
 ## Art
-Every plant and creature is a flat cut-paper shape standing in 3D space. The flowers, sun, triangle,
-semicircle, macaroni and noodle come straight from `../shapes-1/` and `../new/`; the rest (fish,
-jellyfish, clams, rocks, kelp) are drawn in the same style into a texture atlas at startup.
+Everything is flat paper: no lighting, no shadows, no perspective. Shapes sit side by side on the
+seabed, the camera only follows the diver, and ambient motion runs at 6 frames a second with a
+few slightly different cuts of each shape, like stop-motion. A paper-grain texture sits over the scene.
 
-## What's in the scene
-- Procedural seabed (reef in the middle, winding trench, basin walls) with animated caustics
-- Water surface seen from below with a Snell's window, god rays, marine snow
-- ~640 schooling fish (boids, 5 species) that scatter from the diver
-- Kelp forests and sea grass swaying in a vertex shader, coral, rocks, bubbling vents
-- Glowing jellyfish, depth-based fog and light falloff, dive-computer HUD with sonar
+The flowers, sun, triangle, semicircle, macaroni and noodle come from `../shapes-1/` and `../new/`;
+the fish, jellyfish, clams, rocks, kelp and diver are cut in the same style in code.
 
-`window.blueHollow` exposes the scene, camera, player and game state for tinkering in the console.
-Tuning constants (world radius, pearl count, species list, oxygen rates) are at the top of `main.js`
-and in the `SPECIES` array.
+`window.blueHollow` exposes the diver, game state, clams, fish and jellyfish for tinkering in the console.
+Tuning constants (world size, pearl count, stop-motion rate) are at the top of `main.js`.

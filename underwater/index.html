@@ -19,22 +19,21 @@
     --mustard: #d9c227;
     --tomato: #ef7426;
     --pink: #eaa8cb;
-    --cut: 4px 5px 0 rgba(15, 60, 58, 0.35);
     --font: "Karla", "Helvetica Neue", Arial, system-ui, sans-serif;
   }
   [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; background: #8ecfd3; color: var(--ink); overflow: hidden; }
   body { font-family: var(--font); -webkit-user-select: none; user-select: none; touch-action: none; }
   #game { position: fixed; inset: 0; }
-  #game canvas { display: block; width: 100%; height: 100%; }
+  #game canvas { display: block; cursor: pointer; }
 
-  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0;
-    box-shadow: inset 0 0 0 26px var(--tomato); transition: opacity 0.6s ease-out; }
+  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; border: 22px solid var(--tomato);
+    transition: opacity 0.6s ease-out; }
   #flash.on { opacity: 0.85; transition: none; }
 
   /* Paper HUD */
   .hud { position: fixed; pointer-events: none; font-variant-numeric: tabular-nums; }
-  .card { background: var(--paper); color: var(--ink); box-shadow: var(--cut); }
+  .card { background: var(--paper); color: var(--ink); }
   #readout { top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px;
     display: grid; grid-template-columns: auto auto; gap: 0 16px; align-items: baseline;
     padding: 12px 16px 12px; border-radius: 16px 16px 16px 4px; }
@@ -59,22 +58,21 @@
 
   #toast { left: 50%; top: 28%; transform: translateX(-50%) rotate(-2deg); font-size: 14px; font-weight: 700; letter-spacing: 0.14em;
     text-transform: uppercase; background: var(--mustard); color: var(--ink); padding: 8px 16px; border-radius: 3px;
-    box-shadow: var(--cut); opacity: 0; transition: opacity 0.35s; text-align: center; white-space: nowrap; }
+    opacity: 0; transition: opacity 0.35s; text-align: center; white-space: nowrap; }
   #toast.on { opacity: 1; }
 
-  #crosshair { left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--paper); opacity: 0.8; }
 
   /* Screens */
   .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(15, 113, 96, 0.35); }
   .panel { position: relative; width: min(480px, 100%); display: grid; gap: 18px; padding: 34px 30px 30px;
-    background: var(--paper); border-radius: 22px 22px 22px 6px; box-shadow: 8px 10px 0 rgba(20, 34, 36, 0.45); box-sizing: border-box; }
+    background: var(--paper); border-radius: 22px 22px 22px 6px; box-sizing: border-box; }
   .panel::before { content: ""; position: absolute; top: -34px; right: 34px; width: 92px; height: 92px; border-radius: 50%;
-    background: var(--tomato); box-shadow: var(--cut); z-index: -1; }
+    background: var(--tomato); z-index: -1; }
   .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; color: var(--tomato); margin: 0; }
   h1 { font-weight: 800; font-size: clamp(52px, 13vw, 88px); line-height: 0.86; margin: 0; color: var(--deep);
-    letter-spacing: -0.03em; text-wrap: balance; text-shadow: 4px 4px 0 var(--pink); }
+    letter-spacing: -0.03em; text-wrap: balance; }
   h2 { font-weight: 800; font-size: clamp(36px, 9vw, 54px); line-height: 0.95; margin: 0; color: var(--deep);
-    letter-spacing: -0.02em; text-wrap: balance; text-shadow: 3px 3px 0 var(--pink); }
+    letter-spacing: -0.02em; text-wrap: balance; }
   .panel p { margin: 0; font-size: 16px; line-height: 1.5; color: var(--ink); max-width: 60ch; }
   .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 14px;
     padding-top: 14px; border-top: 2px dotted rgba(47, 127, 122, 0.5); }
@@ -82,19 +80,11 @@
   .keys dd { margin: 0; }
   button.go { justify-self: start; font: 700 15px var(--font); letter-spacing: 0.18em; text-transform: uppercase;
     color: var(--paper); background: var(--tomato); border: 0; border-radius: 999px; padding: 14px 30px; cursor: pointer;
-    box-shadow: 3px 4px 0 var(--ink); transition: transform 0.1s, box-shadow 0.1s; }
+    transition: transform 0.1s; }
   button.go:hover { background: var(--deep); }
-  button.go:active { transform: translate(3px, 4px); box-shadow: 0 0 0 var(--ink); }
+  button.go:active { transform: translate(1px, 2px); }
   button.go:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
 
-  /* Touch controls */
-  #touch { position: fixed; inset: 0; pointer-events: none; }
-  #touch .btns { position: absolute; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 12px; pointer-events: auto; }
-  #touch button { width: 60px; height: 60px; border-radius: 50%; font: 700 12px var(--font); letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--ink); background: var(--paper); border: 0; box-shadow: var(--cut); }
-  #touch button.on { background: var(--mustard); transform: translate(2px, 3px); box-shadow: 1px 1px 0 rgba(20, 34, 36, 0.38); }
-  #stick { position: absolute; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 50%; background: rgba(242, 230, 207, 0.35); }
-  #stick i { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: var(--paper); box-shadow: var(--cut); }
   @media (max-width: 520px) { #readout .v { font-size: 17px; } #sonar { width: 84px; } .panel { padding: 28px 22px 24px; } }
   @media (prefers-reduced-motion: reduce) { #o2.low #o2Fill { animation: none; } }
 </style>
@@ -124,15 +114,7 @@
     <div class="row"><span>O₂ Tank</span><span id="o2Val">100%</span></div>
     <div class="bar"><div id="o2Fill"></div></div>
   </div>
-  <div id="crosshair" class="hud"></div>
   <div id="toast" class="hud"></div>
-  <div id="touch" hidden>
-    <div id="stick" hidden><i></i></div>
-    <div class="btns">
-      <button id="tUp" type="button">Up</button>
-      <button id="tDown" type="button">Dive</button>
-    </div>
-  </div>
 </div>
 
 <div id="startScreen" class="screen">
@@ -141,11 +123,9 @@
     <h1>Blue Hollow</h1>
     <p>Clams on the floor of the hollow are holding pearls, each marked by a sparkle. Collect them all before your tank runs dry. Surface to breathe, and give the jellyfish room.</p>
     <dl class="keys" id="keyList">
-      <dt>Mouse</dt><dd>Look (click to lock, Esc to release)</dd>
-      <dt>W A S D</dt><dd>Swim</dd>
-      <dt>Space / C</dt><dd>Rise / sink</dd>
-      <dt>Shift</dt><dd>Kick harder (uses more air)</dd>
-      <dt>F</dt><dd>Dive torch</dd>
+      <dt>Arrow keys</dt><dd>Swim</dd>
+      <dt>Click</dt><dd>Swim to that spot, or to a clam</dd>
+      <dt>Surface</dt><dd>Refill your tank</dd>
     </dl>
     <button class="go" id="startBtn" type="button">Dive in</button>
   </div>
@@ -160,17 +140,6 @@
   </div>
 </div>
 
-<div id="pauseScreen" class="screen" hidden>
-  <div class="panel">
-    <p class="eyebrow">Paused</p>
-    <h2>Holding depth</h2>
-    <button class="go" id="resumeBtn" type="button">Resume</button>
-  </div>
-</div>
-
-<script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
-</script>
 <script type="module" src="main.js"></script>
 </body>
 </html>

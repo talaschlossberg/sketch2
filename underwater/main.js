@@ -1,13 +1,14 @@
-import * as THREE from 'three';
-
 // =====================================================================
-// Blue Hollow: a first-person underwater dive.
-// World: a lagoon basin, surface at y = 0, walls rising at the rim.
+// Blue Hollow: a side-view dive through a cut-paper lagoon.
+// Arrow keys swim; clicking swims you to a spot (or a clam).
+// Everything is flat paper: no lighting, no shadows, no perspective.
+// World units are roughly pixels; 25 units = 1 metre of depth.
 // =====================================================================
 
-const WORLD_R = 172;          // swimmable radius
+const W = 6400, H = 1500, SURF = 170;   // world size and water line
+const UNITS_PER_M = 25;
 const PEARL_COUNT = 20;
-const SURFACE_BREATH_Y = -1.3; // above this depth you can breathe
+const BOIL_FPS = 6;                     // stop-motion rate for ambient motion
 
 // ---------- seeded random + noise ----------------------------------
 function mulberry32(a) {
@@ -20,6 +21,7 @@ function mulberry32(a) {
 }
 const rand = mulberry32(20260924);
 const rr = (a, b) => a + (b - a) * rand();
+const pick = (arr) => arr[Math.floor(rand() * arr.length)];
 
 const perm = new Uint8Array(512);
 {
@@ -30,6 +32,7 @@ const perm = new Uint8Array(512);
 }
 const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
 const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 function grad(h, x, y) {
   const g = h & 7, u = g < 4 ? x : y, v = g < 4 ? y : x;
   return ((g & 1) ? -u : u) + ((g & 2) ? -2 * v : 2 * v);
@@ -44,421 +47,56 @@ function noise2(x, y) {
     lerp(grad(perm[a], x, y), grad(perm[b], x - 1, y), u),
     lerp(grad(perm[a + 1], x, y - 1), grad(perm[b + 1], x - 1, y - 1), u), v);
 }
-function fbm(x, y, oct = 5) {
+function fbm(x, y, oct = 4) {
   let s = 0, a = 1, f = 1, n = 0;
   for (let i = 0; i < oct; i++) { s += a * noise2(x * f, y * f); n += a; a *= 0.5; f *= 2.03; }
   return s / n;
 }
-const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
 
-function terrainHeight(x, z) {
-  const r = Math.hypot(x, z);
-  let h = -15 - 20 * smooth(35, 140, r);                     // shallow reef in the middle, deeper outside
-  h += fbm(x * 0.012, z * 0.012, 5) * 16;                     // rolling seabed
-  const rg = 1 - Math.abs(noise2(x * 0.035 + 10, z * 0.035 - 7) * 2.6);
-  h += Math.pow(Math.max(rg, 0), 5) * 4;                      // rocky ridges
-  const tr = Math.abs(noise2(x * 0.0065 + 3.1, z * 0.0065 - 1.7) * 2.6);
-  h -= (1 - smooth(0.0, 0.16, tr)) * 16 * smooth(45, 90, r);  // winding trench
-  h += smooth(160, 225, r) * 46;                              // basin walls
-  return Math.min(h, -3.5);
-}
-function terrainNormalY(x, z) {
-  const e = 0.8;
-  const dx = terrainHeight(x + e, z) - terrainHeight(x - e, z);
-  const dz = terrainHeight(x, z + e) - terrainHeight(x, z - e);
-  return 2 * e / Math.hypot(dx, 2 * e, dz);
-}
-
-// ---------- renderer / scene ----------------------------------------
-const container = document.getElementById('game');
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.toneMapping = THREE.NoToneMapping;
-container.appendChild(renderer.domElement);
-
-// Shape-land palette, taken from the cut-paper shapes in ../shapes-1
+// ---------- palette (from the cut-paper shapes in ../shapes-1) -------
 const PAL = {
   pink: '#eaa8cb', orange: '#ef7426', green: '#0f7160', yellow: '#d9c227', lemon: '#f5e663',
-  cream: '#faf4ef', ink: '#1d1d1b', blue: '#3d6fb6', rose: '#d9829f',
-  sand: '#f6e7d3', surface: '#bfe6e4', surfaceDeep: '#2a7c7e',
+  cream: '#faf4ef', ink: '#1d1d1b', blue: '#3d6fb6', rose: '#d9829f', sand: '#f6e7d3',
 };
+const WATER = ['#b3e0df', '#9ad3d4', '#80c3c7', '#63aeb4', '#4b979f', '#377f88'];
 
-// Fog in hard steps, so distance reads as stacked layers of cut paper.
-THREE.ShaderChunk.fog_fragment = /* glsl */`
-#ifdef USE_FOG
-  #ifdef FOG_EXP2
-    float fogFactor = 1.0 - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth);
-  #else
-    float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
-  #endif
-  fogFactor = min(floor(fogFactor * 6.0 + 0.35) / 6.0, 1.0);
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
-#endif`;
-
-const scene = new THREE.Scene();
-const SHALLOW = new THREE.Color('#8ecfd3');
-const DEEP = new THREE.Color('#145a60');
-scene.fog = new THREE.FogExp2(SHALLOW.clone(), 0.024);
-scene.background = scene.fog.color;
-
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 420);
-camera.rotation.order = 'YXZ';
-scene.add(camera);
-
-
-// ---------- shared shader bits ---------------------------------------
-const shared = {
-  uTime: { value: 0 }, uCaustic: { value: 1 },
-  uSunDir: { value: new THREE.Vector3(-0.35, 1, 0.25).normalize() },
-  uTorch: { value: 0 }, uCamPos: { value: new THREE.Vector3() }, uCamDir: { value: new THREE.Vector3(0, 0, -1) },
-};
-
-const CAUSTIC_GLSL = /* glsl */`
-uniform float uTime;
-uniform float uCaustic, uTorch;
-uniform vec3 uSunDir, uCamPos, uCamDir;
-varying vec3 vWorldPos;
-float causticLayer(vec2 uv, float time) {
-  vec2 p = mod(uv * 6.28318, 6.28318) - 250.0;
-  vec2 i = p;
-  float c = 1.0;
-  float inten = 0.005;
-  for (int n = 0; n < 4; n++) {
-    float t = time * (1.0 - (3.5 / float(n + 1)));
-    i = p + vec2(cos(t - i.x) + sin(t + i.y), sin(t - i.y) + cos(t + i.x));
-    c += 1.0 / length(vec2(p.x / (sin(i.x + t) / inten), p.y / (cos(i.y + t) / inten)));
-  }
-  c /= 4.0;
-  c = 1.17 - pow(c, 1.4);
-  return pow(abs(c), 8.0);
+// ---------- the seabed profile ---------------------------------------
+const GSTEP = 8;
+const ground = new Float32Array(Math.ceil(W / GSTEP) + 2);
+for (let i = 0; i < ground.length; i++) {
+  const x = i * GSTEP;
+  let g = 1060 + fbm(x * 0.0011, 3.7, 4) * 520;
+  g += Math.exp(-(((x - 3700) / 420) ** 2)) * 300;        // the deep trench
+  g += Math.exp(-(((x - 5400) / 300) ** 2)) * 140;
+  g -= Math.exp(-(((x - 900) / 520) ** 2)) * 330;         // sunny shallows near the start
+  g -= smooth(300, 0, x) * 760 + smooth(W - 300, W, x) * 760;  // lagoon walls
+  g += noise2(x * 0.03, 11) * 10;                          // hand-cut edge
+  ground[i] = clamp(g, SURF + 150, H - 60);
 }
-float caustics(vec3 wp) {
-  float a = causticLayer(wp.xz * 0.075, uTime * 0.5);
-  float b = causticLayer(wp.xz * 0.043 + 0.37, uTime * 0.37 + 4.0);
-  return min(a * 0.8 + b * 0.6, 1.6);
+function groundAt(x) {
+  const f = clamp(x, 0, W) / GSTEP, i = Math.floor(f);
+  return lerp(ground[i], ground[Math.min(i + 1, ground.length - 1)], f - i);
 }
-`;
+const deepLine = (x) => 1235 + Math.sin(x * 0.004) * 30 + noise2(x * 0.02, 5) * 16;
 
-// Replaces a built-in material's lighting with flat colour (plus a hard-edged torch circle)
-// and splices in optional custom vertex/fragment code.
-function patchMaterial(mat, opts = {}) {
-  mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uTime = shared.uTime;
-    for (const k of ['uCaustic', 'uSunDir', 'uTorch', 'uCamPos', 'uCamDir']) sh.uniforms[k] = shared[k];
-    Object.assign(sh.uniforms, opts.uniforms || {});
-    sh.vertexShader = 'uniform float uTime;\nvarying vec3 vWorldPos;\n' + (opts.vertexHead || '') + '\n' +
-      sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
-        ${opts.vertexBody || ''}
-        vec4 cwp = vec4(transformed, 1.0);
-        #ifdef USE_INSTANCING
-          cwp = instanceMatrix * cwp;
-        #endif
-        vWorldPos = (modelMatrix * cwp).xyz;`);
-    sh.fragmentShader = CAUSTIC_GLSL + (opts.fragHead || '') + '\n' + sh.fragmentShader
-      .replace('#include <color_fragment>', `#include <color_fragment>
-        ${opts.fragColor || ''}`)
-      .replace('#include <opaque_fragment>', `
-        vec3 paper = diffuseColor.rgb;
-        vec3 tv = vWorldPos - uCamPos;
-        float td = length(tv);
-        float cone = step(0.955, dot(tv / max(td, 0.001), uCamDir)) * step(td, 40.0) * uTorch;
-        paper = mix(paper, diffuseColor.rgb * 1.3 + vec3(0.05, 0.04, 0.0), cone * 0.9);
-        outgoingLight = paper;
-        #include <opaque_fragment>`);
-  };
-  mat.customProgramCacheKey = () => 'patched-' + (opts.key || 'base');
-  return mat;
+// ---------- canvas ------------------------------------------------------
+const canvas = document.createElement('canvas');
+document.getElementById('game').appendChild(canvas);
+const ctx = canvas.getContext('2d');
+const view = { w: 0, h: 0, scale: 1, dpr: 1, x: 0, y: 0 };  // x,y = world coords of the top-left corner
+function resize() {
+  view.dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = window.innerWidth, ch = window.innerHeight;
+  canvas.width = Math.round(cw * view.dpr); canvas.height = Math.round(ch * view.dpr);
+  canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+  view.scale = Math.min(ch / 820, cw / 560);
+  view.w = cw / view.scale; view.h = ch / view.scale;
 }
+resize();
+window.addEventListener('resize', resize);
 
-// ---------- terrain ---------------------------------------------------
-{
-  const SIZE = 480, SEG = 240;
-  const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
-  geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, terrainHeight(pos.getX(i), pos.getZ(i)));
-  geo.computeVertexNormals();
-  // Per-vertex data (slope, patch noise, moss noise); colours are picked in the shader with hard edges.
-  const nrm = geo.attributes.normal;
-  const data = new Float32Array(pos.count * 3);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i);
-    data.set([nrm.getY(i), fbm(x * 0.06, z * 0.06, 3), fbm(x * 0.05 + 9, z * 0.05, 2)], i * 3);
-  }
-  geo.setAttribute('aData', new THREE.BufferAttribute(data, 3));
-  const mat = patchMaterial(new THREE.MeshLambertMaterial(), {
-    key: 'terrain',
-    vertexHead: 'attribute vec3 aData;\nvarying vec3 vData;\n',
-    vertexBody: 'vData = aData;',
-    fragHead: `varying vec3 vData;
-      uniform vec3 uSand, uDeepSand, uRock, uDashSand, uDashDeep, uDashRock;
-      float hs(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`,
-    fragColor: `
-      // flat paper regions: cream shallows, pink depths, green slopes
-      float deep = step(vWorldPos.y, -30.0 + vData.y * 6.0);
-      float rocky = step(vData.x + vData.y * 0.12, 0.82);
-      vec3 ground = mix(mix(uSand, uDeepSand, deep), uRock, rocky);
-      // scattered dashes, like the pink triangle's
-      vec2 g = vWorldPos.xz * 0.42;
-      vec2 cell = floor(g);
-      float r = hs(cell);
-      vec2 f = fract(g) - 0.5 + (vec2(hs(cell + 7.1), hs(cell + 3.3)) - 0.5) * 0.35;
-      float an = r * 2.4 - 1.2;
-      f = mat2(cos(an), -sin(an), sin(an), cos(an)) * f;
-      float dash = step(abs(f.x), 0.17) * step(abs(f.y), 0.045) * step(0.7, r) * (1.0 - rocky);
-      ground = mix(ground, mix(uDashSand, uDashDeep, deep), dash);
-      // wobbly stripes across the green slopes
-      float st = step(fract((vWorldPos.x * 0.7 + vWorldPos.y + sin(vWorldPos.z * 0.35) * 1.4) * 0.2), 0.28);
-      ground = mix(ground, uDashRock, st * rocky);
-      diffuseColor.rgb = ground;`,
-    uniforms: {
-      uSand: { value: new THREE.Color(PAL.sand) }, uDeepSand: { value: new THREE.Color(PAL.pink) },
-      uRock: { value: new THREE.Color(PAL.green) }, uDashSand: { value: new THREE.Color(PAL.pink) },
-      uDashDeep: { value: new THREE.Color(PAL.orange) }, uDashRock: { value: new THREE.Color(PAL.pink) },
-    },
-  });
-  scene.add(new THREE.Mesh(geo, mat));
-}
-
-// Picks a point on the seabed within a radius band, with an optional acceptance test.
-function seabedPoint(rMin, rMax, accept = () => true, tries = 40) {
-  for (let t = 0; t < tries; t++) {
-    const a = rand() * Math.PI * 2, r = Math.sqrt(rr(rMin * rMin, rMax * rMax));
-    const x = Math.cos(a) * r, z = Math.sin(a) * r, y = terrainHeight(x, z);
-    if (accept(x, y, z)) return new THREE.Vector3(x, y, z);
-  }
-  return null;
-}
-
-// ---------- water surface (seen from below) --------------------------
-const surfaceMat = new THREE.ShaderMaterial({
-  fog: true,
-  side: THREE.DoubleSide,
-  uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-    uTime: { value: 0 },
-    uSky: { value: new THREE.Color(PAL.cream) },
-    uUnder: { value: new THREE.Color(PAL.surface) },
-    uPaper: { value: new THREE.Color(PAL.pink) },
-    uSun: { value: new THREE.Color(PAL.orange) },
-    uSunDir: { value: new THREE.Vector3(0.3, 1, 0.2).normalize() },
-  }]),
-  vertexShader: /* glsl */`
-    varying vec3 vW;
-    #include <fog_pars_vertex>
-    void main() {
-      vec4 w = modelMatrix * vec4(position, 1.0);
-      vW = w.xyz;
-      vec4 mvPosition = viewMatrix * w;
-      gl_Position = projectionMatrix * mvPosition;
-      #include <fog_vertex>
-    }`,
-  fragmentShader: /* glsl */`
-    uniform float uTime;
-    uniform vec3 uSky, uUnder, uPaper, uSun, uSunDir;
-    varying vec3 vW;
-    #include <fog_pars_fragment>
-    float wave(vec2 p) {
-      float t = uTime;
-      return sin(p.x * 0.21 + t * 1.1) * 0.5 + sin(p.y * 0.17 - t * 0.9) * 0.5
-           + sin((p.x + p.y) * 0.43 + t * 1.7) * 0.25 + sin((p.x - p.y * 0.6) * 0.9 - t * 2.3) * 0.12
-           + sin(p.y * 1.7 + p.x * 0.4 + t * 3.1) * 0.05;
-    }
-    void main() {
-      vec2 p = vW.xz;
-      float e = 0.2;
-      float h = wave(p);
-      vec3 n = normalize(vec3(-(wave(p + vec2(e, 0.0)) - h) / e * 0.35, 1.0, -(wave(p + vec2(0.0, e)) - h) / e * 0.35));
-      vec3 v = normalize(vW - cameraPosition);
-      float cosI = dot(v, n);
-      float window = step(0.64, cosI);                       // Snell's window, cut with scissors
-      vec3 refr = refract(v, -n, 1.33);
-      float sunDisc = step(0.985, dot(normalize(refr + v), uSunDir)) * window;
-      vec3 col = mix(uUnder, uSky, window);
-      float line = step(fract(h * 1.6), 0.1);                 // scalloped wave lines
-      col = mix(col, window > 0.5 ? uPaper : uUnder * 1.25, line * 0.8);
-      col = mix(col, uSun, sunDisc);
-      gl_FragColor = vec4(col, 1.0);
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
-      #include <fog_fragment>
-    }`,
-});
-{
-  const surface = new THREE.Mesh(new THREE.PlaneGeometry(700, 700, 1, 1), surfaceMat);
-  surface.rotation.x = Math.PI / 2; // face down
-  scene.add(surface);
-}
-
-// ---------- god rays ----------------------------------------------------
-const RAY_COUNT = 22, RAY_TILE = 90;
-const rayMat = new THREE.ShaderMaterial({
-  transparent: true, depthWrite: false, side: THREE.FrontSide,
-  uniforms: { uTime: shared.uTime, uStrength: { value: 1 }, uPaper: { value: new THREE.Color(PAL.cream) } },
-  vertexShader: /* glsl */`
-    varying vec2 vUv;
-    varying vec3 vN, vV;
-    varying float vDist;
-    varying float vId;
-    void main() {
-      vUv = uv;
-      mat4 im = mat4(1.0);
-      #ifdef USE_INSTANCING
-        im = instanceMatrix;
-      #endif
-      vec4 mv = viewMatrix * modelMatrix * im * vec4(position, 1.0);
-      vN = normalize(normalMatrix * mat3(im) * normal);
-      vV = normalize(-mv.xyz);
-      vDist = length(mv.xyz);
-      vId = float(gl_InstanceID);
-      gl_Position = projectionMatrix * mv;
-    }`,
-  fragmentShader: /* glsl */`
-    uniform float uTime, uStrength;
-    uniform vec3 uPaper;
-    varying vec2 vUv;
-    varying vec3 vN, vV;
-    varying float vDist, vId;
-    void main() {
-      float edge = step(0.35, abs(dot(normalize(vN), normalize(vV))));
-      float along = 0.5 * step(0.25, vUv.y) + 0.5 * step(0.6, vUv.y);
-      float flicker = step(-0.35, sin(uTime * 0.35 + vId * 2.3));
-      float near = step(3.0, vDist) * step(vDist, 70.0);
-      float a = edge * along * flicker * near * 0.13 * uStrength;
-      gl_FragColor = vec4(uPaper, a);
-    }`,
-});
-const rayGeo = new THREE.CylinderGeometry(1.2, 4.5, 1, 14, 1, true).translate(0, -0.5, 0);
-const rays = new THREE.InstancedMesh(rayGeo, rayMat, RAY_COUNT);
-rays.frustumCulled = false;
-const rayData = Array.from({ length: RAY_COUNT }, () => ({
-  x: rr(0, RAY_TILE), z: rr(0, RAY_TILE), len: rr(28, 55), w: rr(0.5, 1.4),
-}));
-scene.add(rays);
-const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3(), tmpP = new THREE.Vector3();
-const rayTilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.12, 0, -0.22));
-function updateRays() {
-  for (let i = 0; i < RAY_COUNT; i++) {
-    const d = rayData[i];
-    const wx = camera.position.x + (((d.x - camera.position.x) % RAY_TILE) + RAY_TILE * 1.5) % RAY_TILE - RAY_TILE / 2;
-    const wz = camera.position.z + (((d.z - camera.position.z) % RAY_TILE) + RAY_TILE * 1.5) % RAY_TILE - RAY_TILE / 2;
-    tmpP.set(wx, 0, wz);
-    tmpS.set(d.w, d.len, d.w);
-    tmpM.compose(tmpP, rayTilt, tmpS);
-    rays.setMatrixAt(i, tmpM);
-  }
-  rays.instanceMatrix.needsUpdate = true;
-}
-
-// ---------- marine snow ---------------------------------------------------
-const pxRatio = { value: renderer.getPixelRatio() * window.innerHeight / 800 };
-{
-  const N = 2600, BOX = 60;
-  const g = new THREE.BufferGeometry();
-  const p = new Float32Array(N * 3), s = new Float32Array(N);
-  for (let i = 0; i < N; i++) { p.set([rr(0, BOX), rr(0, BOX), rr(0, BOX)], i * 3); s[i] = rand(); }
-  g.setAttribute('position', new THREE.BufferAttribute(p, 3));
-  g.setAttribute('aSeed', new THREE.BufferAttribute(s, 1));
-  const m = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false,
-    uniforms: { uTime: shared.uTime, uCam: { value: camera.position }, uPx: pxRatio, uPaper: { value: new THREE.Color(PAL.cream) } },
-    vertexShader: /* glsl */`
-      uniform float uTime, uPx;
-      uniform vec3 uCam;
-      attribute float aSeed;
-      varying float vA;
-      void main() {
-        vec3 p = position;
-        p.y -= uTime * 0.22 * (0.4 + aSeed);
-        p.x += sin(uTime * 0.3 + aSeed * 40.0) * 0.8;
-        p.z += cos(uTime * 0.25 + aSeed * 23.0) * 0.8;
-        p = mod(p - uCam + 30.0, 60.0) - 30.0 + uCam;
-        vec4 mv = viewMatrix * vec4(p, 1.0);
-        float d = -mv.z;
-        gl_Position = projectionMatrix * mv;
-        gl_PointSize = max(uPx * (0.5 + aSeed) * 9.0 / max(d, 0.5), 2.0);
-        vA = (1.0 - smoothstep(10.0, 28.0, length(p - uCam))) * smoothstep(0.3, 1.5, d) * step(p.y, -0.2);
-      }`,
-    fragmentShader: /* glsl */`
-      uniform vec3 uPaper;
-      varying float vA;
-      void main() {
-        if (length(gl_PointCoord - 0.5) > 0.5) discard;
-        gl_FragColor = vec4(uPaper, step(0.25, vA) * 0.55);
-      }`,
-  });
-  const pts = new THREE.Points(g, m);
-  pts.frustumCulled = false;
-  scene.add(pts);
-}
-
-// ---------- bubbles ---------------------------------------------------------
-const BUB_N = 900;
-const bub = {
-  pos: new Float32Array(BUB_N * 3), size: new Float32Array(BUB_N), vel: new Float32Array(BUB_N),
-  phase: new Float32Array(BUB_N), next: 0,
-};
-const bubGeo = new THREE.BufferGeometry();
-bubGeo.setAttribute('position', new THREE.BufferAttribute(bub.pos, 3).setUsage(THREE.DynamicDrawUsage));
-bubGeo.setAttribute('aSize', new THREE.BufferAttribute(bub.size, 1).setUsage(THREE.DynamicDrawUsage));
-{
-  const m = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false,
-    uniforms: { uPx: pxRatio, uPaper: { value: new THREE.Color(PAL.cream) } },
-    vertexShader: /* glsl */`
-      uniform float uPx;
-      attribute float aSize;
-      varying float vFade;
-      void main() {
-        vec4 mv = viewMatrix * vec4(position, 1.0);
-        gl_Position = projectionMatrix * mv;
-        float d = max(-mv.z, 0.3);
-        gl_PointSize = aSize * uPx * 60.0 / d;
-        vFade = exp(-d * 0.03) * step(0.001, aSize);
-      }`,
-    fragmentShader: /* glsl */`
-      uniform vec3 uPaper;
-      varying float vFade;
-      void main() {
-        vec2 q = gl_PointCoord - 0.5;
-        float d = length(q);
-        if (d > 0.5) discard;
-        float rim = step(0.36, d);
-        float hl = step(length(q - vec2(-0.15, -0.15)), 0.1);
-        float a = max(0.18, max(rim, hl) * 0.9) * step(0.15, vFade);
-        gl_FragColor = vec4(uPaper, a);
-      }`,
-  });
-  const pts = new THREE.Points(bubGeo, m);
-  pts.frustumCulled = false;
-  scene.add(pts);
-}
-function spawnBubble(x, y, z, size = rr(0.05, 0.16)) {
-  const i = bub.next; bub.next = (bub.next + 1) % BUB_N;
-  bub.pos[i * 3] = x; bub.pos[i * 3 + 1] = y; bub.pos[i * 3 + 2] = z;
-  bub.size[i] = size; bub.vel[i] = rr(1.4, 2.6) + size * 6; bub.phase[i] = rr(0, 6.28);
-}
-function updateBubbles(dt, t) {
-  for (let i = 0; i < BUB_N; i++) {
-    if (bub.size[i] === 0) continue;
-    const k = i * 3;
-    bub.pos[k + 1] += bub.vel[i] * dt;
-    bub.pos[k] += Math.sin(t * 5 + bub.phase[i]) * dt * 0.4;
-    bub.pos[k + 2] += Math.cos(t * 4 + bub.phase[i]) * dt * 0.4;
-    if (bub.pos[k + 1] > -0.15) bub.size[i] = 0;
-  }
-  bubGeo.attributes.position.needsUpdate = true;
-  bubGeo.attributes.aSize.needsUpdate = true;
-}
-
-// =====================================================================
-// Shape land: every creature and plant is a flat cut-paper shape
-// standing in the water, drawn once into a texture atlas.
-// =====================================================================
-const SL = PAL;
-// The shapes load from the repo's shapes-1/ and new/ folders; a single-file build can inline them as window.SHAPE_ART.
-const ASSET_BASE = document.querySelector('meta[name="asset-base"]')?.content ?? '../';
-
+// ---------- art: your shapes + matching hand-cut ones ---------------------------
 function loadImage(src) {
   return new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
 }
@@ -483,6 +121,8 @@ function trimmed(img) {
     return o;
   } catch (e) { return null; }
 }
+// The shapes load from the repo's shapes-1/ and new/ folders; a single-file build can inline them as window.SHAPE_ART.
+const ASSET_BASE = document.querySelector('meta[name="asset-base"]')?.content ?? '../';
 const art = Object.fromEntries(await Promise.all([
   ['pinkflower', 'shapes-1/pinkflower.png'], ['redflower', 'shapes-1/redflower.png'],
   ['greenflower', 'shapes-1/greenflower.png'], ['redsun', 'shapes-1/redsun.png'],
@@ -490,25 +130,8 @@ const art = Object.fromEntries(await Promise.all([
   ['macaroni', 'shapes-1/yellowmacaroni.png'], ['noodle', 'new/yellow%20noodle.png'],
 ].map(async ([k, p]) => [k, trimmed(await loadImage(window.SHAPE_ART?.[k] ?? ASSET_BASE + p))])));
 
-// ---------- the atlas ---------------------------------------------------------
-const ATLAS = 2048;
-const atlasCanvas = document.createElement('canvas');
-atlasCanvas.width = atlasCanvas.height = ATLAS;
-const actx = atlasCanvas.getContext('2d');
-let ax = 0, ay = 0, arow = 0;
-// Reserves a w×h cell, lets draw() paint into it, and returns its UV rect and aspect.
-function region(w, h, draw) {
-  if (ax + w > ATLAS) { ax = 0; ay += arow; arow = 0; }
-  const x = ax, y = ay;
-  ax += w; arow = Math.max(arow, h);
-  actx.save();
-  actx.translate(x, y);
-  actx.beginPath(); actx.rect(4, 4, w - 8, h - 8); actx.clip();
-  draw(actx, w, h);
-  actx.restore();
-  return { rect: new THREE.Vector4((x + 4) / ATLAS, 1 - (y + h - 4) / ATLAS, (w - 8) / ATLAS, (h - 8) / ATLAS), aspect: (w - 8) / (h - 8) };
-}
-const crand = mulberry32(77);
+// drawing helpers (all draw in a w×h box, origin top-left)
+let crand = mulberry32(77);
 function blob(g, cx, cy, rx, ry, wob = 0.06) {
   const seed = crand() * 60;
   g.beginPath();
@@ -529,12 +152,12 @@ function stripes(g, w, h, color, width, gap, angle = 0.5) {
   const R = Math.hypot(w, h);
   for (let x = -R; x < R; x += width + gap) {
     g.beginPath();
-    for (let y = -R; y <= R; y += 10) g.lineTo(x + Math.sin(y * 0.025 + x) * width * 0.5, y);
+    for (let y = -R; y <= R; y += 8) g.lineTo(x + Math.sin(y * 0.03 + x) * width * 0.45, y);
     g.stroke();
   }
   g.restore();
 }
-function dashes(g, w, h, color, n, len = 20, thick = 8) {
+function dashes(g, w, h, color, n, len = 16, thick = 6) {
   g.fillStyle = color;
   for (let i = 0; i < n; i++) {
     g.save(); g.translate(crand() * w, crand() * h); g.rotate(-0.7 + crand() * 0.5);
@@ -542,7 +165,7 @@ function dashes(g, w, h, color, n, len = 20, thick = 8) {
     g.restore();
   }
 }
-function spots(g, w, h, color, n, r = 8) {
+function spots(g, w, h, color, n, r = 6) {
   g.fillStyle = color;
   for (let i = 0; i < n; i++) { g.beginPath(); g.arc(crand() * w, crand() * h, r * (0.6 + crand() * 0.7), 0, 7); g.fill(); }
 }
@@ -552,20 +175,20 @@ function noodle(g, pts, width, color) {
 }
 function wavyLine(x0, y0, y1, amp, freq, phase) {
   const pts = [];
-  for (let y = y0; y >= y1; y -= 6) pts.push([x0 + Math.sin(y * freq + phase) * amp, y]);
+  for (let y = y0; y >= y1; y -= 5) pts.push([x0 + Math.sin(y * freq + phase) * amp, y]);
   return pts;
 }
 function drawArt(img, fallback) {
   return (g, w, h) => {
     if (!img) return fallback(g, w, h);
-    const s = Math.min((w - 12) / img.width, (h - 12) / img.height);
-    g.drawImage(img, (w - img.width * s) / 2, h - 6 - img.height * s, img.width * s, img.height * s);
+    const s = Math.min(w / img.width, h / img.height);
+    g.drawImage(img, (w - img.width * s) / 2, h - img.height * s, img.width * s, img.height * s);
   };
 }
 function flower(petals, color, centre, pattern) {
   return (g, w, h) => {
-    const cx = w / 2, cy = h * 0.42, R = w * 0.27;
-    noodle(g, wavyLine(cx, h, cy, 6, 0.04, 1), 14, SL.green);
+    const cx = w / 2, cy = w / 2, R = w * 0.27;
+    noodle(g, wavyLine(cx, h, cy, 4, 0.05, 1), w * 0.06, PAL.green);
     const path = () => {
       g.beginPath();
       for (let i = 0; i < petals; i++) {
@@ -578,461 +201,327 @@ function flower(petals, color, centre, pattern) {
     blob(g, cx, cy, R * 0.42, R * 0.4, 0.1); g.fillStyle = centre; g.fill();
   };
 }
-function drawFish(body, pattern, fin) {
+// A flower (art or hand-cut) set on a stem, so it grows out of the seabed.
+function onStem(img, fallback) {
+  return (g, w, h) => {
+    if (!img) return fallback(g, w, h);
+    noodle(g, wavyLine(w / 2, h, w * 0.5, 4, 0.05, 2), w * 0.06, PAL.green);
+    const s = Math.min(w / img.width, (w * 0.95) / img.height);
+    g.drawImage(img, (w - img.width * s) / 2, w * 0.5 - (img.height * s) / 2, img.width * s, img.height * s);
+  };
+}
+function fishArt(body, pattern, fin) {
   return (g, w, h) => {
     const by = h * 0.5;
     g.fillStyle = fin;
-    g.beginPath(); g.moveTo(w * 0.34, by); g.lineTo(w * 0.05, by - h * 0.36);
-    g.quadraticCurveTo(w * 0.15, by, w * 0.05, by + h * 0.36); g.closePath(); g.fill();
-    g.beginPath(); g.moveTo(w * 0.42, by - h * 0.22); g.quadraticCurveTo(w * 0.52, by - h * 0.56, w * 0.7, by - h * 0.26); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(w * 0.34, by); g.lineTo(w * 0.04, by - h * 0.38);
+    g.quadraticCurveTo(w * 0.14, by, w * 0.04, by + h * 0.38); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(w * 0.42, by - h * 0.22); g.quadraticCurveTo(w * 0.52, by - h * 0.58, w * 0.7, by - h * 0.26); g.closePath(); g.fill();
     fillWith(g, () => blob(g, w * 0.6, by, w * 0.32, h * 0.33, 0.035), body, pattern && (() => pattern(g, w, h)));
-    g.beginPath(); g.arc(w * 0.8, by - h * 0.07, h * 0.1, 0, 7); g.fillStyle = SL.cream; g.fill();
-    g.beginPath(); g.arc(w * 0.815, by - h * 0.07, h * 0.05, 0, 7); g.fillStyle = SL.ink; g.fill();
+    g.beginPath(); g.arc(w * 0.8, by - h * 0.07, h * 0.1, 0, 7); g.fillStyle = PAL.cream; g.fill();
+    g.beginPath(); g.arc(w * 0.815, by - h * 0.07, h * 0.05, 0, 7); g.fillStyle = PAL.ink; g.fill();
   };
 }
 
-const TEX = {};
-// tall things first so the shelf packer stays tidy
-TEX.kelp = [
-  region(176, 1024, (g, w, h) => noodle(g, wavyLine(w / 2, h - 10, 18, w * 0.2, 0.012, 0), 46, SL.lemon)),
-  region(176, 1024, (g, w, h) => noodle(g, wavyLine(w / 2, h - 10, 18, w * 0.22, 0.016, 2), 40, SL.green)),
-  region(176, 1024, (g, w, h) => noodle(g, wavyLine(w / 2, h - 10, 18, w * 0.18, 0.02, 4), 36, SL.yellow)),
-  region(176, 1024, drawArt(art.noodle, (g, w, h) => noodle(g, wavyLine(w / 2, h - 10, 18, w * 0.25, 0.01, 1), 50, SL.lemon))),
-];
-TEX.jelly = [SL.pink, SL.lemon, SL.cream, SL.rose].map((bell, i) => region(256, 400, (g, w, h) => {
-  const tent = [SL.orange, SL.pink, SL.orange, SL.lemon][i];
-  for (let k = 0; k < 5; k++) noodle(g, wavyLine(w * (0.26 + k * 0.12), h - 16, h * 0.3, 10, 0.05, k * 1.7), 9, tent);
-  fillWith(g, () => { g.beginPath(); g.ellipse(w / 2, h * 0.33, w * 0.42, h * 0.27, 0, Math.PI, 0); g.closePath(); }, bell,
-    () => stripes(g, w, h, i % 2 ? SL.pink : SL.orange, 10, 18, 0));
-}));
-TEX.fish = {
-  blueDash: region(256, 128, drawFish(SL.blue, (g, w, h) => dashes(g, w, h, SL.lemon, 30, 18, 7), SL.lemon)),
-  blueStripe: region(256, 128, drawFish(SL.blue, (g, w, h) => stripes(g, w, h, SL.cream, 8, 26, 0.2), SL.pink)),
-  yellowDot: region(256, 128, drawFish(SL.yellow, (g, w, h) => spots(g, w, h, SL.orange, 26, 7), SL.orange)),
-  yellowInk: region(256, 128, drawFish(SL.lemon, (g, w, h) => stripes(g, w, h, SL.ink, 5, 30, -0.1), SL.yellow)),
-  sardine: region(256, 128, drawFish(SL.cream, (g, w, h) => { g.fillStyle = SL.blue; g.fillRect(0, h * 0.44, w, h * 0.1); }, SL.blue)),
-  clown: region(256, 128, drawFish(SL.orange, (g, w, h) => stripes(g, w, h, SL.cream, 16, 44, 0), SL.ink)),
-  pinkDash: region(256, 128, drawFish(SL.pink, (g, w, h) => dashes(g, w, h, SL.orange, 34, 18, 7), SL.orange)),
-  greenStripe: region(256, 128, drawFish(SL.green, (g, w, h) => stripes(g, w, h, SL.pink, 6, 18, 0.7), SL.pink)),
+// A sprite is a few slightly different cuts of the same shape; cycling them gives a stop-motion wobble.
+const RES = 2;
+function sprite(w, h, draw, variants = 3) {
+  const cuts = [];
+  for (let v = 0; v < variants; v++) {
+    crand = mulberry32(1000 + v * 31 + Math.floor(w * 7 + h * 13));
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(w * RES); c.height = Math.ceil(h * RES);
+    const g = c.getContext('2d');
+    g.scale(RES, RES);
+    // tiny per-cut jitter so the edges shimmer like re-cut paper
+    g.translate(w / 2, h / 2); g.rotate((v - 1) * 0.012); g.scale(1 + (v - 1) * 0.008, 1 - (v - 1) * 0.008); g.translate(-w / 2, -h / 2);
+    draw(g, w, h);
+    cuts.push(c);
+  }
+  return { cuts, w, h };
+}
+
+const S = {};
+S.fish = {
+  blueDash: sprite(96, 48, fishArt(PAL.blue, (g, w, h) => dashes(g, w, h, PAL.lemon, 14, 8, 3), PAL.lemon)),
+  blueStripe: sprite(96, 48, fishArt(PAL.blue, (g, w, h) => stripes(g, w, h, PAL.cream, 3.5, 10, 0.2), PAL.pink)),
+  yellowDot: sprite(80, 40, fishArt(PAL.yellow, (g, w, h) => spots(g, w, h, PAL.orange, 12, 3), PAL.orange)),
+  sardine: sprite(60, 26, fishArt(PAL.cream, (g, w, h) => { g.fillStyle = PAL.blue; g.fillRect(0, h * 0.44, w, h * 0.12); }, PAL.blue)),
+  clown: sprite(70, 36, fishArt(PAL.orange, (g, w, h) => stripes(g, w, h, PAL.cream, 6, 16, 0), PAL.ink)),
+  pinkDash: sprite(90, 46, fishArt(PAL.pink, (g, w, h) => dashes(g, w, h, PAL.orange, 16, 8, 3), PAL.orange)),
+  greenStripe: sprite(100, 50, fishArt(PAL.green, (g, w, h) => stripes(g, w, h, PAL.pink, 3, 8, 0.7), PAL.pink)),
 };
-TEX.grass = [SL.green, SL.yellow, '#3c8a55'].map((c, i) => region(160, 256, (g, w, h) => {
-  for (let k = 0; k < 4; k++) noodle(g, wavyLine(w * (0.2 + k * 0.2), h - 8, h * (0.12 + crand() * 0.3), 6, 0.05, k + i), 11, c);
+S.jelly = [PAL.pink, PAL.lemon, PAL.cream, PAL.rose].map((bell, i) => sprite(70, 120, (g, w, h) => {
+  const tent = [PAL.orange, PAL.pink, PAL.orange, PAL.lemon][i];
+  for (let k = 0; k < 5; k++) noodle(g, wavyLine(w * (0.22 + k * 0.14), h - 4, h * 0.3, 3, 0.12, k * 1.7 + crand()), 3, tent);
+  fillWith(g, () => { g.beginPath(); g.ellipse(w / 2, h * 0.32, w * 0.46, h * 0.28, 0, Math.PI, 0); g.closePath(); }, bell,
+    () => stripes(g, w, h, i % 2 ? PAL.pink : PAL.orange, 3.5, 7, 0));
 }));
-TEX.coral = [
-  region(256, 320, drawArt(art.pinkflower, flower(5, SL.pink, SL.orange))),
-  region(256, 320, drawArt(art.redflower, flower(5, SL.orange, SL.pink))),
-  region(256, 320, drawArt(art.greenflower, flower(6, SL.green, SL.pink, (g, w, h) => stripes(g, w, h, SL.pink, 5, 22, 0.4)))),
-  region(256, 320, flower(6, SL.yellow, SL.orange)),
-  region(256, 320, flower(5, SL.pink, SL.green, (g, w, h) => dashes(g, w, h, SL.orange, 40, 16, 6))),
-  region(256, 256, drawArt(art.pinktriangle, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, 12); g.lineTo(w - 14, h - 8); g.lineTo(14, h - 8); g.closePath(); }, SL.pink, () => dashes(g, w, h, SL.orange, 50)))),
-  region(256, 256, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, 10); g.lineTo(w - 20, h - 8); g.lineTo(20, h - 8); g.closePath(); }, SL.green, () => stripes(g, w, h, SL.lemon, 6, 20, -0.4))),
-  region(256, 176, drawArt(art.semicircle, (g, w, h) => fillWith(g, () => { g.beginPath(); g.arc(w / 2, h - 8, w * 0.44, Math.PI, 0); g.closePath(); }, SL.pink, () => stripes(g, w, h, SL.orange, 9, 16, 0.6)))),
-  region(256, 176, (g, w, h) => fillWith(g, () => { g.beginPath(); g.arc(w / 2, h - 8, w * 0.44, Math.PI, 0); g.closePath(); }, SL.orange, () => stripes(g, w, h, SL.pink, 9, 16, -0.6))),
-  region(256, 160, drawArt(art.macaroni, (g, w, h) => { g.beginPath(); g.arc(w / 2, h - 8, w * 0.38, Math.PI, 0); g.strokeStyle = SL.yellow; g.lineWidth = 34; g.stroke(); })),
-  region(128, 256, (g, w, h) => { noodle(g, wavyLine(w / 2, h, h * 0.35, 4, 0.05, 0), 10, SL.green); blob(g, w / 2, h * 0.3, w * 0.36, w * 0.36, 0.05); g.fillStyle = SL.orange; g.fill(); }),
-  region(128, 256, drawArt(art.redsun, (g, w, h) => { blob(g, w / 2, h * 0.5, w * 0.42, w * 0.42, 0.05); g.fillStyle = SL.orange; g.fill(); })),
+S.plants = {
+  shallow: [
+    sprite(110, 190, onStem(art.pinkflower, flower(5, PAL.pink, PAL.orange))),
+    sprite(110, 170, onStem(art.redflower, flower(5, PAL.orange, PAL.pink))),
+    sprite(120, 180, onStem(art.greenflower, flower(6, PAL.green, PAL.pink, (g, w, h) => stripes(g, w, h, PAL.pink, 2.5, 9, 0.4)))),
+    sprite(100, 160, flower(6, PAL.yellow, PAL.orange)),
+    sprite(120, 110, drawArt(art.pinktriangle, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, 4); g.lineTo(w - 4, h); g.lineTo(4, h); g.closePath(); }, PAL.pink, () => dashes(g, w, h, PAL.orange, 30)))),
+    sprite(130, 70, drawArt(art.semicircle, (g, w, h) => fillWith(g, () => { g.beginPath(); g.arc(w / 2, h, w * 0.48, Math.PI, 0); g.closePath(); }, PAL.pink, () => stripes(g, w, h, PAL.orange, 5, 8, 0.6)))),
+    sprite(130, 70, (g, w, h) => fillWith(g, () => { g.beginPath(); g.arc(w / 2, h, w * 0.48, Math.PI, 0); g.closePath(); }, PAL.orange, () => stripes(g, w, h, PAL.pink, 5, 8, -0.6))),
+    sprite(60, 130, (g, w, h) => { noodle(g, wavyLine(w / 2, h, h * 0.35, 3, 0.06, 0), 5, PAL.green); blob(g, w / 2, h * 0.28, w * 0.4, w * 0.4, 0.05); g.fillStyle = PAL.orange; g.fill(); }),
+  ],
+  mid: [
+    sprite(170, 80, drawArt(art.macaroni, (g, w, h) => { g.beginPath(); g.arc(w / 2, h, w * 0.4, Math.PI, 0); g.strokeStyle = PAL.yellow; g.lineWidth = 22; g.stroke(); })),
+    sprite(110, 100, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, 4); g.lineTo(w - 6, h); g.lineTo(6, h); g.closePath(); }, PAL.green, () => stripes(g, w, h, PAL.lemon, 3, 10, -0.4))),
+    sprite(100, 170, onStem(art.redsun, (g, w, h) => { noodle(g, wavyLine(w / 2, h, w / 2, 3, 0.06, 0), 6, PAL.green); blob(g, w / 2, w / 2, w * 0.42, w * 0.42, 0.05); g.fillStyle = PAL.orange; g.fill(); })),
+  ],
+  grass: [PAL.green, PAL.yellow, '#3c8a55'].map((c) => sprite(70, 70, (g, w, h) => {
+    for (let k = 0; k < 4; k++) noodle(g, wavyLine(w * (0.18 + k * 0.21), h, h * (0.1 + crand() * 0.35), 3, 0.1, k + crand() * 3), 5, c);
+  })),
+};
+S.rock = [
+  sprite(200, 110, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.05), PAL.green, () => stripes(g, w, h, PAL.pink, 4, 14, 0.5))),
+  sprite(170, 90, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.07), PAL.ink, () => spots(g, w, h, PAL.cream, 14, 4))),
+  sprite(150, 90, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.05), PAL.rose, () => dashes(g, w, h, PAL.green, 18, 12, 5))),
 ];
-TEX.rock = [
-  region(256, 176, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 0.72, w * 0.46, h * 0.66, 0.05), SL.green, () => stripes(g, w, h, SL.pink, 6, 24, 0.5))),
-  region(256, 176, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 0.72, w * 0.46, h * 0.6, 0.07), SL.ink, () => spots(g, w, h, SL.cream, 18, 6))),
-  region(256, 176, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 0.75, w * 0.46, h * 0.62, 0.05), SL.rose, () => dashes(g, w, h, SL.green, 30, 18, 7))),
-  region(256, 176, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 0.7, w * 0.44, h * 0.7, 0.06), '#2e8a74', () => stripes(g, w, h, SL.lemon, 5, 30, -0.3))),
-];
-TEX.vent = region(192, 256, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w * 0.38, 12); g.lineTo(w * 0.62, 12); g.lineTo(w - 10, h - 6); g.lineTo(10, h - 6); g.closePath(); }, SL.ink,
-  () => { for (let k = 0; k < 4; k++) noodle(g, wavyLine(w * (0.3 + k * 0.13), h, 20, 5, 0.06, k), 4, SL.cream); }));
-const clamShell = (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, h - 10); g.arc(w / 2, h - 10, w * 0.44, Math.PI * 1.05, -Math.PI * 0.05); g.closePath(); }, SL.orange,
-  () => { g.strokeStyle = SL.pink; g.lineWidth = 7; for (let k = 1; k < 8; k++) { const a = Math.PI + (k / 8) * Math.PI; g.beginPath(); g.moveTo(w / 2, h - 10); g.lineTo(w / 2 + Math.cos(a) * w, h - 10 + Math.sin(a) * w); g.stroke(); } });
-TEX.clamOpen = region(256, 192, (g, w, h) => {
-  clamShell(g, w, h);
-  g.beginPath(); g.arc(w / 2, h * 0.62, w * 0.13, 0, 7); g.fillStyle = SL.cream; g.fill();
-  g.beginPath(); g.arc(w * 0.46, h * 0.58, w * 0.035, 0, 7); g.fillStyle = '#ffffff'; g.fill();
+S.vent = sprite(90, 120, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w * 0.36, 4); g.lineTo(w * 0.64, 4); g.lineTo(w - 3, h); g.lineTo(3, h); g.closePath(); }, PAL.ink,
+  () => { for (let k = 0; k < 4; k++) noodle(g, wavyLine(w * (0.28 + k * 0.15), h, 8, 2, 0.12, k), 2, PAL.cream); }));
+const clamShell = (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, h); g.arc(w / 2, h, w * 0.48, Math.PI, 0); g.closePath(); }, PAL.orange,
+  () => { g.strokeStyle = PAL.pink; g.lineWidth = 3; for (let k = 1; k < 8; k++) { const a = Math.PI + (k / 8) * Math.PI; g.beginPath(); g.moveTo(w / 2, h); g.lineTo(w / 2 + Math.cos(a) * w, h + Math.sin(a) * w); g.stroke(); } });
+S.clamOpen = sprite(90, 70, (g, w, h) => {
+  g.save(); g.translate(0, -h * 0.28); clamShell(g, w, h * 0.8); g.restore();     // lid, lifted
+  g.fillStyle = PAL.pink; g.fillRect(w * 0.1, h * 0.52, w * 0.8, h * 0.06);
+  g.save(); g.translate(0, h * 0.55); g.scale(1, 0.45); g.translate(w, h); g.rotate(Math.PI); clamShell(g, w, h); g.restore();
+  g.beginPath(); g.arc(w / 2, h * 0.52, w * 0.13, 0, 7); g.fillStyle = PAL.cream; g.fill();
 });
-TEX.clamShut = region(256, 192, (g, w, h) => { g.save(); g.translate(0, h * 0.25); g.scale(1, 0.75); clamShell(g, w, h); g.restore(); });
-TEX.star = region(192, 192, (g, w, h) => {
+S.clamShut = sprite(90, 70, (g, w, h) => { g.save(); g.translate(0, h * 0.35); g.scale(1, 0.65); clamShell(g, w, h); g.restore(); });
+S.star = sprite(56, 56, (g, w, h) => {
   const star = (r1, r2, rot, fill) => {
     g.beginPath();
     for (let i = 0; i < 8; i++) { const a = rot + (i * Math.PI) / 4, r = i % 2 ? r2 : r1; g.lineTo(w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r); }
     g.closePath(); g.fillStyle = fill; g.fill();
   };
-  star(w * 0.32, w * 0.06, Math.PI / 4, SL.orange);
-  star(w * 0.46, w * 0.07, 0, SL.lemon);
-  g.beginPath(); g.arc(w / 2, h / 2, w * 0.07, 0, 7); g.fillStyle = SL.orange; g.fill();
+  star(w * 0.3, w * 0.06, Math.PI / 4, PAL.orange);
+  star(w * 0.48, w * 0.07, 0, PAL.lemon);
 });
-const atlasTex = new THREE.CanvasTexture(atlasCanvas);
-atlasTex.colorSpace = THREE.SRGBColorSpace;
-atlasTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+S.sun = sprite(150, 150, drawArt(art.redsun, (g, w, h) => { blob(g, w / 2, h / 2, w * 0.46, h * 0.46, 0.05); g.fillStyle = PAL.orange; g.fill(); }), 1);
+S.cloud = [0, 1].map(() => sprite(220, 70, (g, w, h) => { blob(g, w / 2, h / 2, w * 0.47, h * 0.4, 0.12); g.fillStyle = PAL.pink; g.fill(); }, 2));
 
-// ---------- billboard layers ------------------------------------------------------
-// MODE_CYL: stands upright and turns to face you. MODE_SPH: always faces you.
-// MODE_AXIS: lies along its swim direction and rolls to show its side (fish).
-const SHAPE_VERT = /* glsl */`
-  uniform float uTime;
-  attribute vec3 iPos;
-  attribute vec2 iSize;
-  attribute vec4 iRect;
-  attribute vec4 iParams;   // phase, sway (m), roll, flip
-  attribute vec3 iDir;
-  varying vec2 vUv;
-  #include <fog_pars_vertex>
-  void main() {
-    vec2 q = position.xy;
-    vec2 t = uv;
-    vec3 toCam = cameraPosition - iPos;
-    vec3 right, up;
-  #if defined(MODE_CYL)
-    vec3 f = normalize(vec3(toCam.x, 0.0, toCam.z) + vec3(1e-4, 0.0, 0.0));
-    right = vec3(f.z, 0.0, -f.x);
-    up = vec3(0.0, 1.0, 0.0);
-  #elif defined(MODE_AXIS)
-    right = normalize(iDir + vec3(1e-4, 0.0, 0.0));
-    vec3 c = cross(normalize(toCam), right);
-    up = length(c) < 1e-3 ? vec3(0.0, 1.0, 0.0) : normalize(c);
-    if (up.y < 0.0) up = -up;
-  #else
-    right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
-    up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-  #endif
-    float ph = iParams.x * 6.2831;
-  #ifdef SWAY
-    q.x += (sin(uTime * 1.1 + ph + t.y * 3.0) * 0.5 + sin(uTime * 2.3 + ph * 1.7 + t.y * 6.0) * 0.12) * iParams.y * t.y * t.y / iSize.x;
-  #endif
-  #ifdef WIGGLE
-    q.y += sin(uTime * 10.0 + ph) * max(0.0, 0.45 - t.x) * 0.5;
-  #endif
-    float cr = cos(iParams.z), sr = sin(iParams.z);
-    q = vec2(cr * q.x - sr * q.y, sr * q.x + cr * q.y);
-    if (iParams.w > 0.5) t.x = 1.0 - t.x;
-    vUv = iRect.xy + t * iRect.zw;
-    vec3 wp = iPos + right * q.x * iSize.x + up * q.y * iSize.y;
-    vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
-    #include <fog_vertex>
-  }`;
-const SHAPE_FRAG = /* glsl */`
-  uniform sampler2D uAtlas;
-  varying vec2 vUv;
-  #include <fog_pars_fragment>
-  void main() {
-    vec4 c = texture2D(uAtlas, vUv);
-    if (c.a < 0.45) discard;
-    gl_FragColor = vec4(c.rgb, 1.0);
-    #include <colorspace_fragment>
-    #include <fog_fragment>
-  }`;
-function makeLayer(max, { mode = 'CYL', bottom = true, segX = 1, segY = 1, sway = false, wiggle = false } = {}) {
-  const base = new THREE.PlaneGeometry(1, 1, segX, segY);
-  if (bottom) base.translate(0, 0.5, 0);
-  const geo = new THREE.InstancedBufferGeometry();
-  geo.index = base.index;
-  geo.setAttribute('position', base.attributes.position);
-  geo.setAttribute('uv', base.attributes.uv);
-  const mk = (n) => new THREE.InstancedBufferAttribute(new Float32Array(max * n), n).setUsage(THREE.DynamicDrawUsage);
-  const a = { iPos: mk(3), iSize: mk(2), iRect: mk(4), iParams: mk(4), iDir: mk(3) };
-  for (const k in a) geo.setAttribute(k, a[k]);
-  geo.instanceCount = 0;
-  const defines = { ['MODE_' + mode]: '' };
-  if (sway) defines.SWAY = '';
-  if (wiggle) defines.WIGGLE = '';
-  const mat = new THREE.ShaderMaterial({
-    fog: true, side: THREE.DoubleSide, defines,
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uAtlas: { value: null } }]),
-    vertexShader: SHAPE_VERT, fragmentShader: SHAPE_FRAG,
-  });
-  mat.uniforms.uAtlas.value = atlasTex;
-  mat.uniforms.uTime = shared.uTime;
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.frustumCulled = false;
-  scene.add(mesh);
-  return {
-    a, count: 0,
-    add(pos, w, h, tex, { phase = rand(), sway = 0, roll = 0, flip = rand() < 0.5 } = {}) {
-      const i = this.count++;
-      a.iPos.setXYZ(i, pos.x, pos.y, pos.z);
-      a.iSize.setXY(i, w, h);
-      a.iRect.setXYZW(i, tex.rect.x, tex.rect.y, tex.rect.z, tex.rect.w);
-      a.iParams.setXYZW(i, phase, sway, roll, flip ? 1 : 0);
-      a.iDir.setXYZ(i, 1, 0, 0);
-      geo.instanceCount = this.count;
-      return i;
-    },
-    setRect(i, tex) { a.iRect.setXYZW(i, tex.rect.x, tex.rect.y, tex.rect.z, tex.rect.w); a.iRect.needsUpdate = true; },
-    dirty(...keys) { for (const k of keys) a[k].needsUpdate = true; },
-  };
-}
-const pick = (arr) => arr[Math.floor(rand() * arr.length)];
-
-// ---------- seabed shapes ------------------------------------------------------------
-const reefSpot = (x, y, z) => y > -27 && terrainNormalY(x, z) > 0.8;
-{
-  const rocks = makeLayer(340);
-  for (let i = 0; i < 340; i++) {
-    const at = seabedPoint(8, 190);
-    if (!at) continue;
-    const tex = pick(TEX.rock);
-    const w = rand() < 0.12 ? rr(6, 12) : rr(1.4, 4);
-    rocks.add(new THREE.Vector3(at.x, at.y - 0.25, at.z), w, w / tex.aspect, tex);
-  }
-
-  const coral = makeLayer(700, { segY: 4, sway: true });
-  for (let i = 0; i < 700; i++) {
-    const at = seabedPoint(0, 110, reefSpot);
-    if (!at) continue;
-    const tex = pick(TEX.coral);
-    const h = rr(0.9, 2.6) * (tex.aspect > 1.2 ? 0.7 : 1);
-    coral.add(new THREE.Vector3(at.x, at.y - 0.1, at.z), h * tex.aspect, h, tex, { sway: 0.12 });
-  }
-
-  const kelp = makeLayer(700, { segY: 14, sway: true });
-  for (let f = 0; f < 12; f++) {
-    const centre = seabedPoint(40, 160, (x, y, z) => y < -24 && terrainNormalY(x, z) > 0.75);
-    if (!centre) continue;
-    for (let j = 0; j < 55; j++) {
-      const a = rand() * 6.28, r = Math.sqrt(rand()) * 14;
-      const x = centre.x + Math.cos(a) * r, z = centre.z + Math.sin(a) * r, y = terrainHeight(x, z);
-      const h = Math.min(rr(9, 24), -y - 2);
-      const tex = pick(TEX.kelp);
-      kelp.add(new THREE.Vector3(x, y - 0.3, z), h * tex.aspect * 1.6, h, tex, { sway: rr(1.5, 3) });
-    }
-  }
-
-  const grass = makeLayer(1800, { segY: 3, sway: true });
-  for (let k = 0; k < 90; k++) {
-    const centre = seabedPoint(0, 120, (x, y, z) => y > -30 && terrainNormalY(x, z) > 0.9);
-    if (!centre) continue;
-    for (let j = 0; j < 20; j++) {
-      const a = rand() * 6.28, r = Math.sqrt(rand()) * 4;
-      const x = centre.x + Math.cos(a) * r, z = centre.z + Math.sin(a) * r;
-      const tex = pick(TEX.grass), h = rr(0.6, 1.4);
-      grass.add(new THREE.Vector3(x, terrainHeight(x, z) - 0.05, z), h * tex.aspect, h, tex, { sway: 0.25 });
-    }
-  }
+function drawSprite(sp, x, y, w, h, frame, flip = false, rot = 0, ox = 0.5, oy = 1) {
+  // (x, y) is the anchor point in world units; ox/oy place the anchor inside the sprite
+  ctx.save();
+  ctx.translate(x, y);
+  if (rot) ctx.rotate(rot);
+  if (flip) ctx.scale(-1, 1);
+  ctx.drawImage(sp.cuts[frame % sp.cuts.length], -w * ox, -h * oy, w, h);
+  ctx.restore();
 }
 
+// Paper grain: a static overlay of fibres and specks, multiplied over the scene.
+const grain = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, 256);
+  const r = mulberry32(5);
+  for (let i = 0; i < 2600; i++) { const v = 200 + Math.floor(r() * 50); g.fillStyle = `rgb(${v},${v},${v - 6})`; g.fillRect(r() * 256, r() * 256, 1 + r() * 1.5, 1 + r() * 1.5); }
+  g.lineCap = 'round';
+  for (let i = 0; i < 140; i++) {
+    const v = 190 + Math.floor(r() * 50); g.strokeStyle = `rgb(${v},${v - 4},${v - 10})`; g.lineWidth = 0.6 + r() * 0.6;
+    const x = r() * 256, y = r() * 256, a = r() * 6.28, l = 6 + r() * 20;
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a + 1) * l * 0.5, y + Math.sin(a + 1) * l * 0.5, x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  return ctx.createPattern(c, 'repeat');
+})();
+
+// =====================================================================
+// World layout: everything stands side by side on the seabed, no overlaps
+// =====================================================================
+const scenery = [];   // { sp, x, y, w, h, sway, phase } or kelp noodles
+const clams = [];
 const vents = [];
 {
-  const layer = makeLayer(6);
-  for (let i = 0; i < 6; i++) {
-    const at = seabedPoint(55, 160, (x, y) => y < -30);
-    if (!at) continue;
-    const h = rr(2.6, 3.6);
-    layer.add(new THREE.Vector3(at.x, at.y - 0.3, at.z), h * TEX.vent.aspect, h, TEX.vent);
-    vents.push(new THREE.Vector3(at.x, at.y + h - 0.4, at.z));
+  const taken = [];   // occupied [x0, x1] spans along the seabed
+  const free = (x0, x1) => taken.every(([a, b]) => x1 < a || x0 > b);
+  const place = (x, w) => { taken.push([x - w / 2, x + w / 2]); };
+  const baseY = (x, w) => Math.max(groundAt(x - w * 0.35), groundAt(x + w * 0.35)) + 6;
+  const flatEnough = (x, w) => Math.abs(groundAt(x - w / 2) - groundAt(x + w / 2)) < w * 0.35;
+
+  // pearls first, spread across the lagoon from shallow to deep
+  for (let i = 0; i < PEARL_COUNT; i++) {
+    for (let t = 0; t < 400; t++) {
+      // try this pearl's own stretch of the lagoon first, then anywhere
+      const x = t < 60 ? 420 + ((i + rand()) / PEARL_COUNT) * (W - 840) : rr(420, W - 420);
+      if (!free(x - 60, x + 60) || (t < 200 && !flatEnough(x, 90))) continue;
+      place(x, 110);
+      clams.push({ x, y: baseY(x, 90), taken: false, phase: rand() * 6.28 });
+      break;
+    }
+  }
+  // vents in the deep water
+  for (let i = 0; i < 5; i++) {
+    const x = rr(2600, 5800);
+    if (groundAt(x) < 1200 || !free(x - 55, x + 55)) continue;
+    place(x, 90);
+    const y = baseY(x, 90);
+    scenery.push({ sp: S.vent, x, y, w: 90, h: 120, sway: 0 });
+    vents.push({ x, y: y - 116 });
+  }
+  // kelp forests: noodles stand close together, like a bundle of paper strips
+  for (let f = 0; f < 9; f++) {
+    const cx = rr(1400, W - 400);
+    if (groundAt(cx) < 1050) continue;
+    const n = 4 + Math.floor(rand() * 5);
+    for (let k = 0; k < n; k++) {
+      const x = cx + (k - n / 2) * rr(22, 34);
+      if (!free(x - 10, x + 10)) continue;
+      const h = Math.min(rr(360, 720), groundAt(x) - SURF - 120);
+      scenery.push({ kelp: true, x, y: groundAt(x) + 8, h, width: rr(12, 18), color: pick([PAL.lemon, PAL.green, PAL.yellow, '#8fb34a']), phase: rand() * 6.28 });
+    }
+    place(cx, n * 30);
+  }
+  // rocks, flowers and shapes, keeping clear of each other
+  for (let x = 200; x < W - 200;) {
+    const g = groundAt(x);
+    const pool = g < 950 ? S.plants.shallow : g < 1180 ? [...S.plants.shallow.slice(4), ...S.plants.mid] : S.plants.mid;
+    const r = rand();
+    let sp, w, h, sway = 0.02;
+    if (r < 0.2) { sp = pick(S.rock); w = sp.w * rr(0.7, 1.3); h = sp.h * (w / sp.w); sway = 0; }
+    else if (r < 0.42) { sp = pick(S.plants.grass); w = rr(50, 80); h = w; sway = 0.06; }
+    else { sp = pick(pool); const k = rr(0.75, 1.15); w = sp.w * k; h = sp.h * k; }
+    if (free(x - w / 2, x + w / 2)) {
+      place(x, w);
+      scenery.push({ sp, x, y: baseY(x, w), w, h, sway, phase: rand() * 6.28 });
+    }
+    x += w * 0.5 + rr(20, 140);
   }
 }
+// sand markings: dashes cut from pink (shallow) or orange (deep) paper
+const sandDashes = [];
+for (let i = 0; i < 1800; i++) {
+  const x = rr(0, W), g = groundAt(x);
+  const y = rr(g + 14, H + 10);
+  sandDashes.push({ x, y, a: rr(-0.7, -0.2), l: rr(10, 20), deep: y > deepLine(x) });
+}
+sandDashes.sort((a, b) => a.x - b.x);
 
-// ---------- fish (boids) ---------------------------------------------------------------
+// ---------- fish -------------------------------------------------------------
 const SPECIES = [
-  { name: 'tang', tex: ['blueDash', 'blueStripe'], size: [0.55, 0.75], count: 110, speed: [3, 6] },
-  { name: 'butterfly', tex: ['yellowDot', 'yellowInk'], size: [0.4, 0.55], count: 140, speed: [2.5, 5] },
-  { name: 'sardine', tex: ['sardine'], size: [0.28, 0.36], count: 260, speed: [4, 8] },
-  { name: 'clown', tex: ['clown'], size: [0.35, 0.45], count: 60, speed: [2, 4] },
-  { name: 'wrasse', tex: ['pinkDash', 'greenStripe'], size: [0.45, 0.65], count: 70, speed: [2.5, 5.5] },
+  { sp: ['blueDash', 'blueStripe'], n: 16, len: [70, 90], speed: [70, 140] },
+  { sp: ['yellowDot'], n: 18, len: [50, 64], speed: [60, 120] },
+  { sp: ['sardine'], n: 34, len: [34, 42], speed: [90, 170] },
+  { sp: ['clown'], n: 10, len: [44, 52], speed: [50, 100] },
+  { sp: ['pinkDash', 'greenStripe'], n: 14, len: [60, 84], speed: [60, 130] },
 ];
-const FISH_N = SPECIES.reduce((s, sp) => s + sp.count, 0);
-const fishLayer = makeLayer(FISH_N, { mode: 'AXIS', bottom: false, segX: 6, wiggle: true });
-const fish = { pos: [], vel: [], dir: [], scale: new Float32Array(FISH_N), group: new Uint8Array(FISH_N) };
-const groups = [];
-{
-  let i = 0;
-  SPECIES.forEach((sp) => {
-    const schools = sp.name === 'sardine' ? 1 : 2;
-    for (let s = 0; s < schools; s++) groups.push({ species: sp, members: [], seed: rand() * 100, target: new THREE.Vector3() });
-    for (let k = 0; k < sp.count; k++, i++) {
-      const gi = groups.length - schools + (k % schools);
-      groups[gi].members.push(i);
-      fish.group[i] = gi;
-      const ang = rand() * 6.28, r = rr(10, 90);
-      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
-      const p = new THREE.Vector3(x, rr(terrainHeight(x, z) + 2, -3), z);
-      fish.pos.push(p);
-      fish.vel.push(new THREE.Vector3(rr(-1, 1), 0, rr(-1, 1)).setLength(sp.speed[0]));
-      fish.dir.push(fish.vel[i].clone().normalize());
-      const len = rr(sp.size[0], sp.size[1]) * 1.9;
-      fish.scale[i] = len;
-      fishLayer.add(p, len, len / 2, TEX.fish[sp.tex[k % sp.tex.length]], { flip: false });
+const schools = [];
+const fishes = [];
+for (const spec of SPECIES) {
+  for (let s = 0; s < 2; s++) {
+    const school = { spec, members: [], seed: rand() * 100, tx: 0, ty: 0 };
+    schools.push(school);
+    const cx = rr(500, W - 500);
+    for (let k = 0; k < spec.n / 2; k++) {
+      const x = cx + rr(-150, 150);
+      const f = {
+        x, y: rr(SURF + 120, groundAt(x) - 80), vx: rr(-1, 1) * spec.speed[0], vy: 0,
+        len: rr(spec.len[0], spec.len[1]), sp: S.fish[spec.sp[k % spec.sp.length]], face: 1, phase: rand() * 6.28,
+      };
+      school.members.push(f);
+      fishes.push(f);
     }
-  });
+  }
 }
-const _acc = new THREE.Vector3(), _coh = new THREE.Vector3(), _ali = new THREE.Vector3(), _sep = new THREE.Vector3();
-const _d = new THREE.Vector3();
-
-function updateGroupTargets(t) {
-  groups.forEach((g, gi) => {
-    const a = t * (0.025 + (gi % 3) * 0.008) + g.seed;
-    const r = 30 + 55 * (0.5 + 0.5 * Math.sin(t * 0.01 + g.seed * 3));
-    const x = Math.cos(a) * r, z = Math.sin(a * 1.3) * r;
-    const floor = terrainHeight(x, z);
-    g.target.set(x, Math.min(floor + 4 + (gi % 4) * 2, -3), z);
-  });
-}
-
-function updateFish(dt, playerPos) {
-  const NEIGH = 4.2, SEP = 1.1;
-  const A = fishLayer.a;
-  for (const g of groups) {
-    const sp = g.species;
-    const mem = g.members;
-    for (let a = 0; a < mem.length; a++) {
-      const i = mem[a];
-      const p = fish.pos[i], v = fish.vel[i];
-      _coh.set(0, 0, 0); _ali.set(0, 0, 0); _sep.set(0, 0, 0);
-      let cnt = 0;
-      for (let b = 0; b < mem.length; b++) {
-        if (a === b) continue;
-        const q = fish.pos[mem[b]];
-        const dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
-        const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 < NEIGH * NEIGH) {
-          _coh.add(q); _ali.add(fish.vel[mem[b]]); cnt++;
-          if (d2 < SEP * SEP) { const inv = 1 / Math.max(d2, 0.05); _sep.x += dx * inv; _sep.y += dy * inv; _sep.z += dz * inv; }
+function updateFish(dt, t, diver) {
+  for (const sc of schools) {
+    // each school wanders along the lagoon
+    const a = t * 0.02 + sc.seed;
+    sc.tx = W / 2 + Math.sin(a) * (W / 2 - 500) * Math.cos(a * 0.37 + sc.seed);
+    sc.ty = lerp(SURF + 150, groundAt(sc.tx) - 110, 0.35 + 0.35 * Math.sin(a * 1.7 + sc.seed));
+    const m = sc.members, speed = sc.spec.speed;
+    for (const f of m) {
+      let ax = 0, ay = 0, cx = 0, cy = 0, vx = 0, vy = 0, n = 0;
+      for (const o of m) {
+        if (o === f) continue;
+        const dx = f.x - o.x, dy = f.y - o.y, d2 = dx * dx + dy * dy;
+        if (d2 < 160 * 160) {
+          cx += o.x; cy += o.y; vx += o.vx; vy += o.vy; n++;
+          if (d2 < 45 * 45) { const k = 1 / Math.max(d2, 20); ax += dx * k * 900; ay += dy * k * 900; }
         }
       }
-      _acc.set(0, 0, 0);
-      if (cnt) {
-        _coh.multiplyScalar(1 / cnt).sub(p).multiplyScalar(0.9);
-        _ali.multiplyScalar(1 / cnt).sub(v).multiplyScalar(1.2);
-        _acc.add(_coh).add(_ali);
-      }
-      _acc.addScaledVector(_sep, 3.2);
-      _d.subVectors(g.target, p);
-      const dl = _d.length();
-      if (dl > 0.01) _acc.addScaledVector(_d, Math.min(dl, 20) * 0.06 / dl * 4);
-
-      // flee the diver
-      _d.subVectors(p, playerPos);
-      const pd = _d.length();
-      if (pd < 7 && pd > 0.01) _acc.addScaledVector(_d, (1 - pd / 7) * 40 / pd);
-
-      // stay in the water column
-      const floor = terrainHeight(p.x, p.z);
-      if (p.y < floor + 1.5) _acc.y += (floor + 1.5 - p.y) * 8;
-      if (p.y > -1.5) _acc.y -= (p.y + 1.5) * 8;
-      const r = Math.hypot(p.x, p.z);
-      if (r > WORLD_R - 10) { _acc.x -= p.x / r * 6; _acc.z -= p.z / r * 6; }
-      _acc.y -= v.y * 0.8; // prefer level swimming
-
-      v.addScaledVector(_acc, dt);
-      const sp2 = v.length();
-      const lo = sp.speed[0], hi = pd < 7 ? sp.speed[1] * 1.8 : sp.speed[1];
-      if (sp2 > hi) v.multiplyScalar(hi / sp2); else if (sp2 < lo) v.multiplyScalar(lo / Math.max(sp2, 0.001));
-      p.addScaledVector(v, dt);
-      if (p.y < floor + 0.6) p.y = floor + 0.6;
-
-      const d = fish.dir[i];
-      d.lerp(_d.copy(v).normalize(), Math.min(1, dt * 5)).normalize();
-      A.iPos.setXYZ(i, p.x, p.y, p.z);
-      A.iDir.setXYZ(i, d.x, d.y, d.z);
+      if (n) { ax += (cx / n - f.x) * 0.6 + (vx / n - f.vx) * 0.9; ay += (cy / n - f.y) * 0.6 + (vy / n - f.vy) * 0.9; }
+      ax += (sc.tx - f.x) * 0.08; ay += (sc.ty - f.y) * 0.12;
+      const dx = f.x - diver.x, dy = f.y - diver.y, dd = Math.hypot(dx, dy);
+      const fleeing = dd < 190;
+      if (fleeing && dd > 1) { ax += dx / dd * 900 * (1 - dd / 190); ay += dy / dd * 900 * (1 - dd / 190); }
+      const floor = groundAt(f.x) - 50;
+      if (f.y > floor) ay -= (f.y - floor) * 8;
+      if (f.y < SURF + 60) ay += (SURF + 60 - f.y) * 8;
+      ay -= f.vy * 1.2;                       // fish mostly swim level
+      f.vx += ax * dt; f.vy += ay * dt;
+      const sp = Math.hypot(f.vx, f.vy), hi = speed[1] * (fleeing ? 1.8 : 1), lo = speed[0];
+      if (sp > hi) { f.vx *= hi / sp; f.vy *= hi / sp; } else if (sp < lo) { f.vx *= lo / Math.max(sp, 1); f.vy *= lo / Math.max(sp, 1); }
+      f.x = clamp(f.x + f.vx * dt, 40, W - 40); f.y += f.vy * dt;
+      if (Math.abs(f.vx) > 12) f.face = Math.sign(f.vx);
     }
   }
-  fishLayer.dirty('iPos', 'iDir');
 }
 
-// ---------- jellyfish -----------------------------------------------------------------
-const jellyLayer = makeLayer(34, { mode: 'SPH', bottom: false });
+// ---------- jellyfish ---------------------------------------------------------------
 const jellies = [];
-for (let i = 0; i < 34; i++) {
-  const at = seabedPoint(25, 165, (x, y) => y < -18);
-  if (!at) continue;
-  const s = rr(0.9, 2.2);
-  const home = new THREE.Vector3(at.x, rr(at.y + 5, Math.min(-6, at.y + 22)), at.z);
-  const idx = jellyLayer.add(home, s, s / TEX.jelly[0].aspect, TEX.jelly[i % TEX.jelly.length], { flip: false });
-  jellies.push({ idx, position: home.clone(), home, seed: rand() * 100, size: s });
+while (jellies.length < 14) {
+  const x = rr(1800, W - 300), g = groundAt(x);
+  if (g < 1000) continue;
+  const s = rr(0.8, 1.4);
+  jellies.push({ hx: x, hy: rr(SURF + 220, g - 180), x, y: 0, s, sp: S.jelly[jellies.length % S.jelly.length], seed: rand() * 100 });
 }
 function updateJellies(t) {
-  const A = jellyLayer.a;
   for (const j of jellies) {
-    const pulse = Math.sin(t * 2.1 + j.seed);
-    j.position.set(
-      j.home.x + Math.sin(t * 0.05 + j.seed) * 6,
-      j.home.y + Math.sin(t * 0.15 + j.seed) * 3 + pulse * 0.15,
-      j.home.z + Math.cos(t * 0.04 + j.seed * 1.3) * 6);
-    A.iPos.setXYZ(j.idx, j.position.x, j.position.y, j.position.z);
-    A.iSize.setXY(j.idx, j.size * (1 + pulse * 0.08), (j.size / TEX.jelly[0].aspect) * (1 - pulse * 0.05));
-    A.iParams.setZ(j.idx, Math.sin(t * 0.3 + j.seed) * 0.12);
+    j.x = j.hx + Math.sin(t * 0.07 + j.seed) * 70;
+    j.y = j.hy + Math.sin(t * 0.25 + j.seed) * 60;
   }
-  jellyLayer.dirty('iPos', 'iSize', 'iParams');
 }
 
-// ---------- pearls in clams ---------------------------------------------------------------
-const clamLayer = makeLayer(PEARL_COUNT);
-const starLayer = makeLayer(PEARL_COUNT, { mode: 'SPH', bottom: false });
-const pearls = [];
-{
-  let tries = 0;
-  while (pearls.length < PEARL_COUNT && tries++ < 4000) {
-    const band = pearls.length < 7 ? [8, 70] : pearls.length < 14 ? [60, 125] : [100, 165];
-    const at = seabedPoint(band[0], band[1], (x, y, z) => terrainNormalY(x, z) > 0.82 &&
-      pearls.every((p) => Math.hypot(p.pos.x - x, p.pos.z - z) > 22));
-    if (!at) continue;
-    const w = 1.9;
-    const clam = clamLayer.add(new THREE.Vector3(at.x, at.y - 0.15, at.z), w, w / TEX.clamOpen.aspect, TEX.clamOpen, { flip: false });
-    const pos = new THREE.Vector3(at.x, at.y + 0.6, at.z);
-    const star = starLayer.add(new THREE.Vector3(at.x, at.y + 1.9, at.z), 1.8, 1.8, TEX.star, { flip: false });
-    pearls.push({ pos, clam, star, taken: false, phase: rand() * 6.28 });
-  }
+// ---------- bubbles ---------------------------------------------------------------
+const bubbles = [];
+function spawnBubble(x, y, r = rr(2.5, 6)) {
+  if (bubbles.length > 400) bubbles.shift();
+  bubbles.push({ x, y, r, vy: rr(50, 90) + r * 6, phase: rand() * 6.28 });
 }
-function setPearlTaken(p, taken) {
-  p.taken = taken;
-  clamLayer.setRect(p.clam, taken ? TEX.clamShut : TEX.clamOpen);
-  starLayer.a.iSize.setXY(p.star, taken ? 0 : 1.8, taken ? 0 : 1.8);
-  starLayer.dirty('iSize');
-}
-function updatePearlStars(t) {
-  for (const p of pearls) {
-    if (p.taken) continue;
-    const s = 1.6 + (0.5 + 0.5 * Math.sin(t * 2 + p.phase)) * 0.7;
-    starLayer.a.iSize.setXY(p.star, s, s);
-    starLayer.a.iParams.setZ(p.star, t * 0.5 + p.phase);
-  }
-  starLayer.dirty('iSize', 'iParams');
+function updateBubbles(dt, t) {
+  for (const b of bubbles) { b.y -= b.vy * dt; b.x += Math.sin(t * 3 + b.phase) * 16 * dt; }
+  for (let i = bubbles.length - 1; i >= 0; i--) if (bubbles[i].y < SURF + 4) bubbles.splice(i, 1);
 }
 
 // =====================================================================
 // Player, input, game state
 // =====================================================================
-const player = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, roll: 0 };
-const game = { state: 'menu', o2: 100, score: 0, time: 0, stingCooldown: 0, breathTimer: 0, torch: false, locked: false };
+const diver = { x: 700, y: SURF + 60, vx: 0, vy: 0, face: 1, target: null };
+const game = { state: 'menu', o2: 100, score: 0, time: 0, stingCooldown: 0, breathTimer: 2 };
 const keys = new Set();
-const touchMove = { x: 0, y: 0 };
-const touchVert = { up: false, down: false };
 
 const $ = (id) => document.getElementById(id);
 const ui = {
   hud: $('hudRoot'), depth: $('hDepth'), ata: $('hAta'), temp: $('hTemp'), pearls: $('hPearls'),
   o2: $('o2'), o2Fill: $('o2Fill'), o2Val: $('o2Val'), toast: $('toast'), flash: $('flash'),
   arrow: $('sonarArrow'), sonarDist: $('sonarDist'),
-  start: $('startScreen'), end: $('endScreen'), pause: $('pauseScreen'),
+  start: $('startScreen'), end: $('endScreen'),
   endTitle: $('endTitle'), endText: $('endText'), endEyebrow: $('endEyebrow'),
 };
-const isTouch = matchMedia('(pointer: coarse)').matches;
-if (isTouch) {
-  $('keyList').innerHTML = '<dt>Left thumb</dt><dd>Swim</dd><dt>Right thumb</dt><dd>Look</dd><dt>Up / Dive</dt><dd>Rise and sink</dd>';
-}
 
 let toastTimer = 0;
 function toast(msg, secs = 2.2) { ui.toast.textContent = msg; ui.toast.classList.add('on'); toastTimer = secs; }
 
 function resetGame() {
-  player.pos.set(0, -2, 24);
-  player.vel.set(0, 0, 0);
-  player.yaw = 0; player.pitch = -0.25; player.roll = 0;
-  game.o2 = 100; game.score = 0; game.time = 0; game.stingCooldown = 0; game.breathTimer = 2;
-  for (const p of pearls) {
-    setPearlTaken(p, false);
-  }
+  Object.assign(diver, { x: 700, y: SURF + 60, vx: 0, vy: 0, face: 1, target: null });
+  Object.assign(game, { o2: 100, score: 0, time: 0, stingCooldown: 0, breathTimer: 2 });
+  for (const c of clams) c.taken = false;
 }
-
 function startGame() {
   resetGame();
   game.state = 'play';
-  ui.start.hidden = true; ui.end.hidden = true; ui.pause.hidden = true; ui.hud.hidden = false;
-  $('touch').hidden = !isTouch;
-  requestLock();
+  ui.start.hidden = true; ui.end.hidden = true; ui.hud.hidden = false;
   toast('Find the sparkling clams');
 }
 function endGame(won) {
   game.state = 'over';
-  if (document.pointerLockElement) document.exitPointerLock();
   ui.hud.hidden = true;
   ui.end.hidden = false;
   const mins = Math.floor(game.time / 60), secs = Math.floor(game.time % 60).toString().padStart(2, '0');
@@ -1040,7 +529,7 @@ function endGame(won) {
     let best = null;
     try {
       best = Number(localStorage.getItem('blueHollowBest')) || null;
-      if (!best || game.time < best) { localStorage.setItem('blueHollowBest', String(game.time)); }
+      if (!best || game.time < best) localStorage.setItem('blueHollowBest', String(game.time));
     } catch (e) { /* storage unavailable */ }
     const record = !best || game.time < best;
     ui.endEyebrow.textContent = record ? 'New best time' : 'Dive log';
@@ -1050,204 +539,101 @@ function endGame(won) {
   } else {
     ui.endEyebrow.textContent = 'Dive log';
     ui.endTitle.textContent = 'Out of air';
-    ui.endText.textContent = `You surfaced with ${game.score} of ${pearls.length} pearls after ${mins}:${secs} underwater. Watch the tank and come up to breathe sooner.`;
+    ui.endText.textContent = `You surfaced with ${game.score} of ${clams.length} pearls after ${mins}:${secs} underwater. Come up to breathe sooner next time.`;
   }
 }
-
-function requestLock() {
-  if (isTouch) return;
-  try {
-    const p = renderer.domElement.requestPointerLock();
-    if (p && p.catch) p.catch(() => {});
-  } catch (e) { /* pointer lock unavailable; drag to look instead */ }
-}
-document.addEventListener('pointerlockchange', () => {
-  const locked = document.pointerLockElement === renderer.domElement;
-  if (game.locked && !locked && game.state === 'play') { game.state = 'paused'; ui.pause.hidden = false; }
-  game.locked = locked;
-});
-
 $('startBtn').addEventListener('click', startGame);
 $('restartBtn').addEventListener('click', startGame);
-$('resumeBtn').addEventListener('click', () => { game.state = 'play'; ui.pause.hidden = true; requestLock(); });
 
-let dragging = false;
-renderer.domElement.addEventListener('mousedown', () => {
-  if (game.state !== 'play') return;
-  if (!game.locked) requestLock();
-  dragging = true;
-});
-window.addEventListener('mouseup', () => { dragging = false; });
-window.addEventListener('mousemove', (e) => {
-  if (game.state !== 'play' || !(game.locked || dragging)) return;
-  // Chrome can report a bogus jump on the first event after pointer lock
-  if (Math.abs(e.movementX) > 250 || Math.abs(e.movementY) > 250) return;
-  look(e.movementX, e.movementY, 0.0022);
-});
-function look(dx, dy, k) {
-  player.yaw -= dx * k;
-  player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - dy * k));
-}
+const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 window.addEventListener('keydown', (e) => {
+  if (!ARROWS.includes(e.code)) return;
+  e.preventDefault();
   keys.add(e.code);
-  if (e.code === 'KeyF' && game.state === 'play') { game.torch = !game.torch; toast(game.torch ? 'Torch on' : 'Torch off', 1.2); }
-  if (e.code === 'Space') e.preventDefault();
+  diver.target = null;     // taking the keys cancels a click-to-swim
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 
-// touch: left half = swim stick, right half = look
-{
-  const stick = $('stick'), knob = stick.querySelector('i');
-  let moveId = null, lookId = null, ox = 0, oy = 0, lx = 0, ly = 0;
-  const el = renderer.domElement;
-  el.addEventListener('touchstart', (e) => {
-    if (game.state !== 'play') return;
-    for (const t of e.changedTouches) {
-      if (t.clientX < window.innerWidth / 2 && moveId === null) {
-        moveId = t.identifier; ox = t.clientX; oy = t.clientY;
-        stick.hidden = false; stick.style.left = ox + 'px'; stick.style.top = oy + 'px';
-        knob.style.transform = '';
-      } else if (lookId === null) { lookId = t.identifier; lx = t.clientX; ly = t.clientY; }
-    }
-    e.preventDefault();
-  }, { passive: false });
-  el.addEventListener('touchmove', (e) => {
-    for (const t of e.changedTouches) {
-      if (t.identifier === moveId) {
-        let dx = t.clientX - ox, dy = t.clientY - oy;
-        const l = Math.hypot(dx, dy), max = 45;
-        if (l > max) { dx *= max / l; dy *= max / l; }
-        touchMove.x = dx / max; touchMove.y = -dy / max;
-        knob.style.transform = `translate(${dx}px, ${dy}px)`;
-      } else if (t.identifier === lookId) {
-        look(t.clientX - lx, t.clientY - ly, 0.005);
-        lx = t.clientX; ly = t.clientY;
-      }
-    }
-    e.preventDefault();
-  }, { passive: false });
-  const endTouch = (e) => {
-    for (const t of e.changedTouches) {
-      if (t.identifier === moveId) { moveId = null; touchMove.x = touchMove.y = 0; stick.hidden = true; }
-      if (t.identifier === lookId) lookId = null;
-    }
-  };
-  el.addEventListener('touchend', endTouch);
-  el.addEventListener('touchcancel', endTouch);
-  const hold = (id, key) => {
-    const b = $(id);
-    const on = (v) => (e) => { e.preventDefault(); touchVert[key] = v; b.classList.toggle('on', v); };
-    b.addEventListener('touchstart', on(true), { passive: false });
-    b.addEventListener('touchend', on(false));
-    b.addEventListener('touchcancel', on(false));
-  };
-  hold('tUp', 'up'); hold('tDown', 'down');
-}
+// click (or tap) anywhere in the water to swim there; click a clam to swim to it
+canvas.addEventListener('pointerdown', (e) => {
+  if (game.state !== 'play') return;
+  const wx = view.x + e.clientX / view.scale, wy = view.y + e.clientY / view.scale;
+  const clam = clams.find((c) => !c.taken && Math.hypot(c.x - wx, c.y - 30 - wy) < 70);
+  if (clam) diver.target = { x: clam.x, y: clam.y - 60 };
+  else diver.target = { x: wx, y: clamp(wy, SURF + 20, groundAt(wx) - 40) };
+});
 
 // ---------- player update -------------------------------------------------
-const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _move = new THREE.Vector3();
-function updatePlayer(dt, t) {
-  const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw), cp = Math.cos(player.pitch), spc = Math.sin(player.pitch);
-  _fwd.set(-sy * cp, spc, -cy * cp);
-  _right.set(cy, 0, -sy);
-  const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + touchMove.y;
-  const s = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + touchMove.x;
-  const u = (keys.has('Space') || touchVert.up ? 1 : 0) - (keys.has('KeyC') || keys.has('ControlLeft') || touchVert.down ? 1 : 0);
-  _move.set(0, 0, 0).addScaledVector(_fwd, f).addScaledVector(_right, s);
-  _move.y += u;
-  if (_move.lengthSq() > 1) _move.normalize();
-  const boost = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  const accel = boost ? 16 : 8.5;
-  player.vel.addScaledVector(_move, accel * dt);
-  player.vel.multiplyScalar(Math.exp(-1.9 * dt));      // water drag
-  player.vel.y -= 0.12 * dt;                            // slightly negative buoyancy
-  player.pos.addScaledVector(player.vel, dt);
-
-  const floor = terrainHeight(player.pos.x, player.pos.z) + 1.3;
-  if (player.pos.y < floor) { player.pos.y = floor; if (player.vel.y < 0) player.vel.y *= -0.2; }
-  if (player.pos.y > -0.35) { player.pos.y = -0.35; if (player.vel.y > 0) player.vel.y = 0; }
-  const r = Math.hypot(player.pos.x, player.pos.z);
-  if (r > WORLD_R) { player.pos.x *= WORLD_R / r; player.pos.z *= WORLD_R / r; }
-
-  // gentle swim sway
-  const speed = player.vel.length();
-  player.roll = lerp(player.roll, -player.vel.dot(_right) * 0.03, Math.min(1, dt * 3));
-  camera.position.copy(player.pos);
-  camera.position.y += Math.sin(t * 1.3) * 0.05 + Math.sin(t * 6) * 0.02 * Math.min(speed, 4);
-  camera.rotation.set(player.pitch + Math.sin(t * 0.9) * 0.008, player.yaw, player.roll + Math.sin(t * 0.7) * 0.01);
+function updateDiver(dt) {
+  let ix = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0);
+  let iy = (keys.has('ArrowDown') ? 1 : 0) - (keys.has('ArrowUp') ? 1 : 0);
+  if (diver.target) {
+    const dx = diver.target.x - diver.x, dy = diver.target.y - diver.y, d = Math.hypot(dx, dy);
+    if (d < 24) diver.target = null;
+    else { ix = dx / d; iy = dy / d; }
+  }
+  const l = Math.hypot(ix, iy);
+  if (l > 1) { ix /= l; iy /= l; }
+  diver.vx += ix * 900 * dt; diver.vy += iy * 900 * dt;
+  const drag = Math.exp(-2.6 * dt);
+  diver.vx *= drag; diver.vy *= drag;
+  diver.vy += 12 * dt;                             // a little negative buoyancy
+  diver.x = clamp(diver.x + diver.vx * dt, 120, W - 120);
+  diver.y += diver.vy * dt;
+  const floor = groundAt(diver.x) - 34;
+  if (diver.y > floor) { diver.y = floor; diver.vy = Math.min(diver.vy, 0); }
+  if (diver.y < SURF + 16) { diver.y = SURF + 16; diver.vy = Math.max(diver.vy, 0); }
+  if (Math.abs(diver.vx) > 20) diver.face = Math.sign(diver.vx);
 
   // air
-  const depth = -player.pos.y;
-  if (player.pos.y > SURFACE_BREATH_Y) {
-    if (game.o2 < 99.5 && Math.floor(game.o2 / 20) !== Math.floor(Math.min(100, game.o2 + 30 * dt) / 20)) toast('Breathing');
+  const depth = (diver.y - SURF) / UNITS_PER_M;
+  if (diver.y < SURF + 36) {
+    if (game.o2 < 99) toast('Breathing', 0.6);
     game.o2 = Math.min(100, game.o2 + 30 * dt);
   } else {
-    game.o2 -= (0.9 + depth * 0.025) * (boost && _move.lengthSq() > 0 ? 1.8 : 1) * dt;
+    game.o2 -= (0.9 + depth * 0.03) * dt;
     game.breathTimer -= dt;
     if (game.breathTimer <= 0) {
-      game.breathTimer = rr(3.2, 4.5);
-      for (let i = 0; i < 14; i++) spawnBubble(player.pos.x + _fwd.x * 0.6 + rr(-0.15, 0.15), player.pos.y - 0.25 + rr(0, 0.3), player.pos.z + _fwd.z * 0.6 + rr(-0.15, 0.15));
+      game.breathTimer = rr(3, 4.2);
+      for (let i = 0; i < 8; i++) spawnBubble(diver.x + diver.face * 44 + rr(-6, 6), diver.y - 14 + rr(-6, 6));
     }
   }
   if (game.o2 <= 0) { game.o2 = 0; endGame(false); }
 }
 
-// ---------- interactions ---------------------------------------------------
-function updateInteractions(dt, t) {
+function updateInteractions(dt) {
   game.stingCooldown -= dt;
   for (const j of jellies) {
-    const d = j.position.distanceTo(player.pos);
-    if (d < 1.2 + j.size * 0.7 && game.stingCooldown <= 0) {
+    if (Math.hypot(j.x - diver.x, j.y + 20 * j.s - diver.y) < 50 * j.s + 30 && game.stingCooldown <= 0) {
       game.stingCooldown = 1.5;
       game.o2 = Math.max(0, game.o2 - 12);
-      _d.subVectors(player.pos, j.position).normalize();
-      player.vel.addScaledVector(_d, 6);
+      const dx = diver.x - j.x, dy = diver.y - j.y, d = Math.hypot(dx, dy) || 1;
+      diver.vx += dx / d * 260; diver.vy += dy / d * 260;
+      diver.target = null;
       ui.flash.classList.add('on');
       requestAnimationFrame(() => requestAnimationFrame(() => ui.flash.classList.remove('on')));
       toast('Stung! −12 O₂');
     }
   }
   let nearest = null, nd = Infinity;
-  for (const p of pearls) {
-    if (p.taken) continue;
-    const d = p.pos.distanceTo(player.pos);
-    if (d < 2.4) {
-      setPearlTaken(p, true);
+  for (const c of clams) {
+    if (c.taken) continue;
+    const d = Math.hypot(c.x - diver.x, c.y - 40 - diver.y);
+    if (d < 75) {
+      c.taken = true;
       game.score++;
       game.o2 = Math.min(100, game.o2 + 10);
-      for (let i = 0; i < 24; i++) spawnBubble(p.pos.x + rr(-0.4, 0.4), p.pos.y + rr(0, 0.4), p.pos.z + rr(-0.4, 0.4), rr(0.04, 0.12));
-      toast(game.score === pearls.length ? 'Last pearl!' : `Pearl ${game.score} of ${pearls.length} · +10 O₂`);
-      if (game.score === pearls.length) setTimeout(() => endGame(true), 900);
-    } else if (d < nd) { nd = d; nearest = p.pos; }
+      for (let i = 0; i < 16; i++) spawnBubble(c.x + rr(-20, 20), c.y - 30 + rr(-10, 10), rr(2, 5));
+      toast(game.score === clams.length ? 'Last pearl!' : `Pearl ${game.score} of ${clams.length} · +10 O₂`);
+      if (game.score === clams.length) setTimeout(() => endGame(true), 900);
+    } else if (d < nd) { nd = d; nearest = c; }
   }
-  // sonar
   if (nearest) {
-    const dx = nearest.x - player.pos.x, dz = nearest.z - player.pos.z;
-    const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
-    const ahead = dx * -sy + dz * -cy, side = dx * cy + dz * -sy;
-    const ang = Math.atan2(side, ahead) * 180 / Math.PI;
+    const ang = Math.atan2(nearest.x - diver.x, -(nearest.y - 40 - diver.y)) * 180 / Math.PI;
     ui.arrow.setAttribute('transform', `rotate(${ang.toFixed(1)})`);
-    const vert = nearest.y - player.pos.y;
-    ui.sonarDist.textContent = `${Math.round(nd)} m${vert < -6 ? ' ↓' : vert > 6 ? ' ↑' : ''}`;
-  } else {
-    ui.sonarDist.textContent = '--';
-  }
-}
-
-// ---------- environment by depth --------------------------------------------
-const _c = new THREE.Color();
-function updateAtmosphere() {
-  const depth = Math.max(0, -camera.position.y);
-  const k = smooth(0, 48, depth);
-  scene.fog.color.copy(SHALLOW).lerp(DEEP, k);
-  scene.fog.density = 0.022 + k * 0.012;
-  rayMat.uniforms.uStrength.value = 1 - k * 0.6;
-  surfaceMat.uniforms.uUnder.value.set(PAL.surface).lerp(_c.set(PAL.surfaceDeep), k * 0.8);
-  shared.uTorch.value = game.torch && game.state === 'play' ? 1 : 0;
-  shared.uCamPos.value.copy(camera.position);
-  camera.getWorldDirection(shared.uCamDir.value);
-  shared.uCaustic.value = 1 - k * 0.3;
+    ui.sonarDist.textContent = `${Math.round(nd / UNITS_PER_M)} m`;
+  } else ui.sonarDist.textContent = '--';
 }
 
 // ---------- HUD ---------------------------------------------------------------
@@ -1257,130 +643,211 @@ function updateHUD(dt) {
   if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) ui.toast.classList.remove('on'); }
   if (hudTimer > 0) return;
   hudTimer = 0.1;
-  const depth = Math.max(0, -player.pos.y);
+  const depth = Math.max(0, (diver.y - SURF) / UNITS_PER_M);
   ui.depth.innerHTML = `${depth.toFixed(1)}<small>m</small>`;
   ui.ata.innerHTML = `${(1 + depth / 10).toFixed(1)}<small>ata</small>`;
   ui.temp.innerHTML = `${Math.round(27 - depth * 0.17)}<small>°C</small>`;
-  ui.pearls.innerHTML = `${game.score}<small>/ ${pearls.length}</small>`;
+  ui.pearls.innerHTML = `${game.score}<small>/ ${clams.length}</small>`;
   ui.o2Fill.style.transform = `scaleX(${(game.o2 / 100).toFixed(3)})`;
   ui.o2Val.textContent = `${Math.ceil(game.o2)}%`;
   ui.o2.classList.toggle('low', game.o2 < 25);
 }
 
-// ---------- paper pass: cut-out drop shadows from depth, plus paper grain ------------
-const paperRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
-paperRT.depthTexture = new THREE.DepthTexture(1, 1);
-const paperMat = new THREE.ShaderMaterial({
-  depthTest: false, depthWrite: false,
-  uniforms: {
-    tColor: { value: paperRT.texture }, tDepth: { value: paperRT.depthTexture },
-    uRes: { value: new THREE.Vector2(1, 1) }, uScale: { value: 1 },
-    uNear: { value: camera.near }, uFar: { value: camera.far },
-  },
-  vertexShader: /* glsl */`
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-  fragmentShader: /* glsl */`
-    uniform sampler2D tColor, tDepth;
-    uniform vec2 uRes;
-    uniform float uScale, uNear, uFar;
-    varying vec2 vUv;
-    float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
-    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-    float vnoise(vec2 p) {
-      vec2 i = floor(p), f = fract(p);
-      f = f * f * (3.0 - 2.0 * f);
-      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x), f.y);
-    }
-    void main() {
-      vec3 col = texture2D(tColor, vUv).rgb;
-      float d0 = lin(texture2D(tDepth, vUv).r);
-      // anything nearer up and to the left casts a shadow down and to the right
-      float sh = 0.0;
-      for (int i = 1; i <= 4; i++) {
-        vec2 o = vec2(-1.0, 1.0) * float(i) * 1.8 * uScale / uRes;
-        float d1 = lin(texture2D(tDepth, vUv + o).r);
-        sh += step(0.3 + d0 * 0.04, d0 - d1);
-      }
-      col *= 1.0 - sh * 0.075;
-      vec2 fc = gl_FragCoord.xy / uScale;
-      float grain = hash(floor(fc)) - 0.5;
-      float fiber = vnoise(fc * vec2(0.09, 0.025)) + vnoise(fc * 0.35) * 0.5 - 0.75;
-      float mottle = vnoise(fc * 0.006) - 0.5;
-      col *= 1.0 + grain * 0.05 + fiber * 0.06 + mottle * 0.07;
-      gl_FragColor = vec4(col, 1.0);
-      #include <colorspace_fragment>
-    }`,
-});
-const paperScene = new THREE.Scene();
-const paperQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), paperMat);
-paperQuad.frustumCulled = false;
-paperScene.add(paperQuad);
-function sizePaperPass() {
-  const pr = renderer.getPixelRatio();
-  const w = Math.floor(window.innerWidth * pr), h = Math.floor(window.innerHeight * pr);
-  paperRT.setSize(w, h);
-  paperMat.uniforms.uRes.value.set(w, h);
-  paperMat.uniforms.uScale.value = pr;
+// =====================================================================
+// Drawing
+// =====================================================================
+function drawDiver(frame, moving) {
+  const k = moving ? (frame % 2 ? 1 : -1) : 0;          // flipper kick, in stop-motion
+  const tilt = clamp(diver.vy / 500, -0.35, 0.35) * diver.face;
+  ctx.save();
+  ctx.translate(diver.x, diver.y);
+  ctx.scale(diver.face, 1);
+  ctx.rotate(tilt * diver.face);
+  // legs and flippers
+  for (const [oy, swing] of [[2, 0.12 + k * 0.16], [6, -0.05 - k * 0.16]]) {
+    ctx.save(); ctx.translate(-34, oy); ctx.rotate(swing);
+    ctx.fillStyle = PAL.blue; ctx.fillRect(-40, -6, 42, 12);
+    ctx.fillStyle = PAL.orange;
+    ctx.beginPath(); ctx.moveTo(-38, -4); ctx.lineTo(-66, -16); ctx.lineTo(-62, 10); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // tank
+  ctx.fillStyle = PAL.green;
+  ctx.beginPath(); ctx.roundRect(-30, -26, 50, 16, 8); ctx.fill();
+  // body
+  ctx.fillStyle = PAL.lemon;
+  ctx.beginPath(); ctx.ellipse(-4, 0, 38, 16, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = PAL.pink; ctx.fillRect(-20, -14, 8, 29);
+  // arm reaching forward
+  ctx.save(); ctx.translate(18, 6); ctx.rotate(0.35 - k * 0.1); ctx.fillStyle = PAL.lemon; ctx.fillRect(0, -5, 30, 10);
+  ctx.fillStyle = PAL.cream; ctx.beginPath(); ctx.arc(32, 0, 6, 0, 7); ctx.fill(); ctx.restore();
+  // head, hood and mask
+  ctx.fillStyle = PAL.cream; ctx.beginPath(); ctx.arc(40, -6, 15, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = PAL.ink; ctx.beginPath(); ctx.arc(38, -8, 15, Math.PI * 0.95, Math.PI * 1.9); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = PAL.orange; ctx.beginPath(); ctx.roundRect(40, -14, 16, 12, 5); ctx.fill();
+  ctx.fillStyle = '#bfe6e4'; ctx.beginPath(); ctx.roundRect(43, -11, 10, 6, 3); ctx.fill();
+  ctx.restore();
 }
-sizePaperPass();
+
+function waterEdge(x, st) {
+  return SURF + Math.sin(x * 0.012 + st * 1.4) * 5 + Math.sin(x * 0.031 - st * 2.1) * 3;
+}
+
+function render(t, frame, st) {
+  const dpr = view.dpr, sc = view.scale;
+  ctx.setTransform(dpr * sc, 0, 0, dpr * sc, -view.x * dpr * sc, -view.y * dpr * sc);
+  const x0 = view.x - 20, x1 = view.x + view.w + 20;
+
+  // sky, sun and paper clouds
+  ctx.fillStyle = PAL.cream;
+  ctx.fillRect(x0, view.y - 10, x1 - x0, SURF + 30 - view.y);
+  if (view.y < SURF) {
+    drawSprite(S.sun, view.x + view.w * 0.78 - view.x * 0.04, 150, 110, 110, 0, false, 0, 0.5, 1);
+    const cw = 2400;
+    for (let i = 0; i < 3; i++) {
+      const cx = ((i * 900 + 200 - view.x * 0.08) % cw + cw) % cw + view.x - 300;
+      drawSprite(S.cloud[i % 2], cx, 60 + i * 22, 180, 55, frame, false, 0, 0.5, 0.5);
+    }
+  }
+
+  // water, in bands of darker paper as it gets deeper
+  const bandY = (k, x) => SURF + (k / WATER.length) * (H - SURF) * 0.92 + Math.sin(x * 0.004 + k * 1.7) * 18 + noise2(x * 0.01, k * 3) * 10;
+  for (let k = 0; k < WATER.length; k++) {
+    ctx.fillStyle = WATER[k];
+    ctx.beginPath();
+    for (let x = x0; x <= x1; x += 16) ctx.lineTo(x, k === 0 ? waterEdge(x, st) : bandY(k, x));
+    ctx.lineTo(x1, H + 20); ctx.lineTo(x0, H + 20); ctx.closePath(); ctx.fill();
+  }
+
+  // kelp noodles and seabed shapes, tucked behind the seabed edge
+  for (const s of scenery) {
+    if (s.kelp) {
+      if (s.x < x0 - 80 || s.x > x1 + 80) continue;
+      const pts = [];
+      for (let y = 0; y <= s.h; y += 12) {
+        const u = y / s.h;
+        pts.push([s.x + Math.sin(y * 0.018 + s.phase) * 12 + Math.sin(st * 1.1 + s.phase + u * 2.5) * 22 * u * u, s.y - y]);
+      }
+      noodle(ctx, pts, s.width, s.color);
+      continue;
+    }
+    if (s.x + s.w < x0 || s.x - s.w > x1) continue;
+    const rot = s.sway ? Math.sin(st * 1.3 + s.phase) * s.sway : 0;
+    drawSprite(s.sp, s.x, s.y, s.w, s.h, frame, false, rot);
+  }
+  for (const c of clams) {
+    if (c.x < x0 - 60 || c.x > x1 + 60) continue;
+    drawSprite(c.taken ? S.clamShut : S.clamOpen, c.x, c.y, 90, 70, frame);
+  }
+
+  // the seabed: cream sand, pink in the deep, with cut-paper dashes
+  const seabed = () => {
+    ctx.beginPath();
+    ctx.moveTo(x0, H + 20);
+    for (let x = x0; x <= x1; x += GSTEP) ctx.lineTo(x, groundAt(x));
+    ctx.lineTo(x1, H + 20); ctx.closePath();
+  };
+  seabed(); ctx.fillStyle = PAL.sand; ctx.fill();
+  ctx.save(); seabed(); ctx.clip();
+  ctx.fillStyle = PAL.pink;
+  ctx.beginPath();
+  for (let x = x0; x <= x1; x += 16) ctx.lineTo(x, deepLine(x));
+  ctx.lineTo(x1, H + 20); ctx.lineTo(x0, H + 20); ctx.closePath(); ctx.fill();
+  let lo = 0, hi = sandDashes.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (sandDashes[m].x < x0) lo = m + 1; else hi = m; }
+  for (let i = lo; i < sandDashes.length && sandDashes[i].x < x1; i++) {
+    const d = sandDashes[i];
+    ctx.fillStyle = d.deep ? PAL.orange : PAL.pink;
+    ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.a);
+    ctx.beginPath(); ctx.roundRect(-d.l / 2, -3, d.l, 6, 3); ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+
+  // pearl sparkles
+  for (const c of clams) {
+    if (c.taken || c.x < x0 - 60 || c.x > x1 + 60) continue;
+    const s = 44 + (frame % 3) * 6;
+    drawSprite(S.star, c.x, c.y - 92, s, s, frame, false, Math.floor(t * 2) * 0.4 + c.phase, 0.5, 0.5);
+  }
+
+  // creatures
+  for (const j of jellies) {
+    if (j.x < x0 - 100 || j.x > x1 + 100) continue;
+    const pulse = frame % 2 ? 0.94 : 1.04;
+    drawSprite(j.sp, j.x, j.y, 70 * j.s * pulse, 120 * j.s / pulse, frame, false, 0, 0.5, 0.3);
+  }
+  for (const f of fishes) {
+    if (f.x < x0 - 60 || f.x > x1 + 60) continue;
+    const tilt = clamp(f.vy / 300, -0.4, 0.4) * f.face;
+    drawSprite(f.sp, f.x, f.y, f.len, f.len * f.sp.h / f.sp.w, frame + (f.phase > 3 ? 1 : 0), f.face < 0, tilt, 0.5, 0.5);
+  }
+  if (game.state === 'play') drawDiver(frame, Math.hypot(diver.vx, diver.vy) > 40);
+  ctx.fillStyle = PAL.cream;
+  for (const b of bubbles) {
+    if (b.x < x0 || b.x > x1) continue;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+  }
+  if (diver.target && game.state === 'play') {
+    ctx.fillStyle = PAL.cream;
+    ctx.beginPath(); ctx.arc(diver.target.x, diver.target.y, 6, 0, 7); ctx.fill();
+  }
+
+  // paper grain over everything, fixed to the screen like the page itself
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = grain;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// ---------- camera ---------------------------------------------------------
+function updateCamera(dt, tx, ty) {
+  const cx = clamp(tx - view.w / 2, 0, Math.max(0, W - view.w));
+  const cy = clamp(ty - view.h * 0.45, -40, Math.max(-40, H - view.h));
+  const k = Math.min(1, dt * 3);
+  view.x = lerp(view.x, cx, k);
+  view.y = lerp(view.y, cy, k);
+}
 
 // ---------- main loop ---------------------------------------------------------
-const clock = new THREE.Clock();
-let t = 0, ventTimer = 0, menuAngle = 0;
+let last = performance.now(), t = 0, ventTimer = 0, menuX = 700;
 resetGame();
-updateGroupTargets(0);
+view.x = clamp(diver.x - view.w / 2, 0, W - view.w);
+view.y = clamp(diver.y - view.h * 0.45, -40, H - view.h);
 
-function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
-  const paused = game.state === 'paused' || document.hidden;
-  if (!paused) t += dt;
-  shared.uTime.value = t;
-  surfaceMat.uniforms.uTime.value = t;
+function frameLoop(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  if (!document.hidden) t += dt;
+  const frame = Math.floor(t * BOIL_FPS);
+  const st = frame / BOIL_FPS;                         // stop-motion time for ambient motion
 
   if (game.state === 'play') {
     game.time += dt;
-    updatePlayer(dt, t);
-    updateInteractions(dt, t);
+    updateDiver(dt);
+    updateInteractions(dt);
     updateHUD(dt);
-  } else if (game.state === 'menu' || game.state === 'over') {
-    // slow cinematic drift over the reef behind the menu
-    menuAngle += dt * 0.03;
-    const x = Math.cos(menuAngle) * 38, z = Math.sin(menuAngle) * 38;
-    camera.position.set(x, Math.max(terrainHeight(x, z) + 6, -9), z);
-    camera.rotation.set(-0.18, Math.atan2(x, z) + 1.1, 0);
-    player.pos.copy(camera.position);
+    updateCamera(dt, diver.x, diver.y);
+  } else {
+    // drift slowly along the lagoon behind the menu
+    menuX += dt * 40;
+    if (menuX > W - 700) menuX = 700;
+    updateCamera(dt, menuX, SURF + 330);
   }
-
-  if (!paused) {
-    updateGroupTargets(t);
-    updateFish(dt, game.state === 'play' ? player.pos : camera.position);
-    updateJellies(t);
-    updatePearlStars(t);
-    ventTimer -= dt;
-    if (ventTimer <= 0) {
-      ventTimer = 0.05;
-      for (const v of vents) spawnBubble(v.x + rr(-0.3, 0.3), v.y, v.z + rr(-0.3, 0.3), rr(0.06, 0.2));
-    }
-    updateBubbles(dt, t);
+  updateFish(dt, t, game.state === 'play' ? diver : { x: -9999, y: -9999 });
+  updateJellies(st);
+  ventTimer -= dt;
+  if (ventTimer <= 0) {
+    ventTimer = 0.18;
+    for (const v of vents) spawnBubble(v.x + rr(-8, 8), v.y, rr(3, 7));
   }
-  updateRays();
-  updateAtmosphere();
-  renderer.setRenderTarget(paperRT);
-  renderer.render(scene, camera);
-  renderer.setRenderTarget(null);
-  renderer.render(paperScene, camera);
-  requestAnimationFrame(frame);
+  updateBubbles(dt, t);
+  render(t, frame, st);
+  requestAnimationFrame(frameLoop);
 }
-requestAnimationFrame(frame);
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  sizePaperPass();
-  pxRatio.value = renderer.getPixelRatio() * window.innerHeight / 800;
-});
+requestAnimationFrame(frameLoop);
 
 // exposed for tinkering from the console
-window.blueHollow = { scene, camera, player, game, terrainHeight, jellies, pearls };
+window.blueHollow = { diver, game, clams, jellies, fishes, groundAt };
