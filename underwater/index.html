@@ -6,99 +6,93 @@
 <title>Blue Hollow</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap">
 <style>
   :root {
     color-scheme: light;
-    --paper: #f7efe2;
-    --paper-2: #e8dcc6;
-    --ink: #22252a;
-    --teal: #2f5aa8;
-    --deep: #2f5aa8;
-    --mustard: #e3a33a;
-    --tomato: #e0533d;
-    --pink: #f2b9a6;
-    --font: "Karla", "Helvetica Neue", Arial, system-ui, sans-serif;
+    --paper: #f4efe3;
+    --ink: #1e1e1e;
+    --red: #e2552d;
+    --blue: #2e62b0;
+    --green: #2f8f4e;
+    --grey: #9b9b9b;
+    --font: "Jost", "Futura", "Century Gothic", "Avenir Next", system-ui, sans-serif;
   }
   [hidden] { display: none !important; }
-  html, body { height: 100%; margin: 0; background: #8ecfd3; color: var(--ink); overflow: hidden; }
+  html, body { height: 100%; margin: 0; background: var(--paper); color: var(--ink); overflow: hidden; }
   body { font-family: var(--font); -webkit-user-select: none; user-select: none; touch-action: none; }
   #game { position: fixed; inset: 0; }
   #game canvas { display: block; cursor: pointer; }
+  #game canvas:focus { outline: none; }
 
-  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; border: 22px solid var(--tomato);
-    transition: opacity 0.6s ease-out; }
-  #flash.on { opacity: 0.85; transition: none; }
+  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; border: 18px solid var(--red); transition: opacity 0.6s ease-out; }
+  #flash.on { opacity: 0.9; transition: none; }
 
-  /* Paper HUD */
+  /* HUD: a row of primer cards */
   .hud { position: fixed; pointer-events: none; font-variant-numeric: tabular-nums; }
-  .card { background: var(--paper); color: var(--ink); }
-  #readout { top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px;
-    display: grid; grid-template-columns: auto auto; gap: 0 16px; align-items: baseline;
-    padding: 12px 16px 12px; border-radius: 16px 16px 16px 4px; }
-  #readout .k { font-size: 11px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--teal); }
-  #readout .v { font-size: 21px; font-weight: 700; text-align: right; }
-  #readout .v small { font-size: 11px; font-weight: 500; margin-left: 3px; color: var(--teal); }
+  #cards { top: calc(14px + env(safe-area-inset-top, 0px)); left: 14px; right: 14px;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+  .num { width: 64px; height: 64px; background: var(--red); color: var(--paper); display: grid; place-content: center; text-align: center; }
+  .num b { font-size: 34px; font-weight: 500; line-height: 1; }
+  .num small { font-size: 11px; letter-spacing: 0.08em; }
+  .box { background: var(--paper); border: 2px solid var(--red); border-radius: 10px; padding: 7px 12px; box-sizing: border-box;
+    display: grid; align-content: center; gap: 3px; min-height: 64px; }
+  .box .k { font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; }
+  .box .v { font-size: 22px; font-weight: 500; line-height: 1; }
+  .box .v small { font-size: 12px; margin-left: 2px; }
+  #o2 { width: 150px; }
+  #o2 .bar { height: 10px; border: 1.5px solid var(--ink); }
+  #o2Fill { height: 100%; width: 100%; background: var(--blue); transform-origin: left; }
+  #o2.low { border-color: var(--ink); }
+  #o2.low #o2Fill { background: var(--red); animation: blink 0.8s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0.3; } }
+  #sonar { grid-template-columns: auto auto; align-items: center; column-gap: 8px; }
+  #sonar svg { width: 38px; height: 38px; grid-row: span 2; }
 
-  #sonar { top: calc(16px + env(safe-area-inset-top, 0px)); right: 16px; width: 96px;
-    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 8px 12px; border-radius: 48px 48px 16px 16px; }
-  #sonar svg { width: 58px; height: 58px; overflow: visible; }
-  #sonar .k { font-size: 10px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--teal); }
-  #sonarDist { font-size: 16px; font-weight: 700; }
-
-  #o2 { left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
-    width: min(360px, calc(100% - 32px)); display: grid; gap: 6px; padding: 10px 16px 14px; border-radius: 14px; }
-  #o2 .row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
-  #o2 .bar { height: 12px; background: var(--paper-2); border-radius: 6px; overflow: hidden; }
-  #o2Fill { height: 100%; width: 100%; background: var(--mustard); border-radius: 6px; transform-origin: left; transition: background 0.3s; }
-  #o2.low #o2Fill { background: var(--tomato); animation: pulse 0.8s infinite alternate; }
-  #o2.low .row { color: var(--tomato); }
-  @keyframes pulse { to { opacity: 0.5; } }
-
-  #toast { left: 50%; top: 28%; transform: translateX(-50%) rotate(-2deg); font-size: 14px; font-weight: 700; letter-spacing: 0.14em;
-    text-transform: uppercase; background: var(--mustard); color: var(--ink); padding: 8px 16px; border-radius: 3px;
-    opacity: 0; transition: opacity 0.35s; text-align: center; white-space: nowrap; }
+  #toast { left: 50%; top: 30%; transform: translateX(-50%); font-size: 15px; font-weight: 500; letter-spacing: 0.08em;
+    background: var(--paper); border: 2px solid var(--ink); padding: 8px 16px; opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
   #toast.on { opacity: 1; }
 
-
-  /* Screens */
-  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(47, 90, 168, 0.3); }
-  .panel { position: relative; width: min(480px, 100%); display: grid; gap: 18px; padding: 34px 30px 30px;
-    background: var(--paper); border-radius: 22px 22px 22px 6px; box-sizing: border-box; }
-  .panel::before { content: ""; position: absolute; top: -34px; right: 34px; width: 92px; height: 92px; border-radius: 50%;
-    background: var(--tomato); z-index: -1; }
-  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; color: var(--tomato); margin: 0; }
-  h1 { font-weight: 800; font-size: clamp(52px, 13vw, 88px); line-height: 0.86; margin: 0; color: var(--deep);
-    letter-spacing: -0.03em; text-wrap: balance; }
-  h2 { font-weight: 800; font-size: clamp(36px, 9vw, 54px); line-height: 0.95; margin: 0; color: var(--deep);
-    letter-spacing: -0.02em; text-wrap: balance; }
-  .panel p { margin: 0; font-size: 16px; line-height: 1.5; color: var(--ink); max-width: 60ch; }
-  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 14px;
-    padding-top: 14px; border-top: 2px dotted rgba(47, 127, 122, 0.5); }
-  .keys dt { color: var(--teal); font-weight: 700; letter-spacing: 0.06em; }
-  .keys dd { margin: 0; }
-  button.go { justify-self: start; font: 700 15px var(--font); letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--paper); background: var(--tomato); border: 0; border-radius: 999px; padding: 14px 30px; cursor: pointer;
-    transition: transform 0.1s; }
-  button.go:hover { background: var(--deep); }
-  button.go:active { transform: translate(1px, 2px); }
-  button.go:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
-
-  /* on-screen arrow pad */
-  #pad { position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-    display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); gap: 4px; }
-  #pad button { font: 700 16px var(--font); color: var(--paper); background: var(--deep); border: 0; border-radius: 12px;
-    cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; }
-  #pad button.on { background: var(--tomato); }
-  #pad button:focus-visible { outline: 3px solid var(--mustard); outline-offset: 2px; }
+  /* arrow pad */
+  #pad { position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    display: grid; grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(3, 50px); gap: 5px; }
+  #pad button { background: var(--paper); border: 2px solid var(--ink); border-radius: 10px; cursor: pointer; padding: 0;
+    display: grid; place-items: center; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #pad button svg { width: 18px; height: 18px; }
+  #pad button.on { background: var(--red); }
+  #pad button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
   #pad [data-dir="up"] { grid-area: 1 / 2; }
   #pad [data-dir="left"] { grid-area: 2 / 1; }
   #pad [data-dir="right"] { grid-area: 2 / 3; }
   #pad [data-dir="down"] { grid-area: 3 / 2; }
-  #game canvas:focus { outline: none; }
-  @media (max-width: 700px) { #o2 { bottom: calc(180px + env(safe-area-inset-bottom, 0px)); } }
-  @media (max-width: 520px) { #readout .v { font-size: 17px; } #sonar { width: 84px; } .panel { padding: 28px 22px 24px; } }
-  @media (prefers-reduced-motion: reduce) { #o2.low #o2Fill { animation: none; } }
+
+  /* screens: a primer page laid over the lagoon */
+  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(244, 239, 227, 0.55); overflow-y: auto; }
+  .panel { width: min(620px, 100%); background: var(--paper); border-top: 10px solid var(--blue); padding: 26px 28px 28px;
+    box-sizing: border-box; display: grid; gap: 20px; }
+  .head { display: flex; align-items: center; gap: 18px; }
+  .head .num { width: 84px; height: 84px; flex: none; }
+  .head .num b { font-size: 46px; }
+  h1, h2 { font-weight: 500; margin: 0; line-height: 1; letter-spacing: -0.01em; text-wrap: balance; }
+  h1 { font-size: clamp(40px, 9vw, 64px); }
+  h2 { font-size: clamp(32px, 7vw, 46px); }
+  .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: var(--red); }
+  .panel p { margin: 0; font-size: 17px; line-height: 1.5; max-width: 56ch; }
+  .legend { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .legend li { border: 2px solid var(--red); border-radius: 12px; padding: 12px 6px 10px; display: grid; justify-items: center; gap: 8px; text-align: center; }
+  .legend svg { width: 64px; height: 48px; }
+  .legend b { font-size: 13px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+  .legend span { font-size: 13px; line-height: 1.3; }
+  button.go { justify-self: start; font: 500 16px var(--font); letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--paper); background: var(--red); border: 0; border-radius: 6px; padding: 14px 30px; cursor: pointer; }
+  button.go:hover { background: var(--ink); }
+  button.go:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+  @media (max-width: 560px) {
+    .legend { grid-template-columns: repeat(2, 1fr); }
+    .panel { padding: 20px 18px 22px; }
+    #o2 { width: 120px; }
+    .box .v { font-size: 18px; }
+  }
 </style>
 </head>
 <body>
@@ -106,53 +100,62 @@
 <div id="flash"></div>
 
 <div id="hudRoot" hidden>
-  <div id="readout" class="hud card">
-    <span class="k">Depth</span><span class="v" id="hDepth">0.0<small>m</small></span>
-    <span class="k">Press.</span><span class="v" id="hAta">1.0<small>ata</small></span>
-    <span class="k">Temp</span><span class="v" id="hTemp">26<small>°C</small></span>
-    <span class="k">Pearls</span><span class="v" id="hPearls">0<small>/ 0</small></span>
-  </div>
-  <div id="sonar" class="hud card">
-    <span class="k">Sonar</span>
-    <svg viewBox="-30 -30 60 60" aria-hidden="true">
-      <circle r="27" fill="#2f5aa8"/>
-      <circle r="17" fill="#f2b9a6"/>
-      <circle r="6" fill="#2f5aa8"/>
-      <g id="sonarArrow"><path d="M0,-25 L9,-5 L0,-10 L-9,-5 Z" fill="#e0533d"/></g>
-    </svg>
-    <span id="sonarDist">--</span>
-  </div>
-  <div id="o2" class="hud card">
-    <div class="row"><span>O₂ Tank</span><span id="o2Val">100%</span></div>
-    <div class="bar"><div id="o2Fill"></div></div>
+  <div id="cards" class="hud">
+    <div class="num"><b id="hPearls">0</b><small id="hPearlsOf">of 20</small></div>
+    <div class="box"><span class="k">Depth</span><span class="v" id="hDepth">0<small>m</small></span></div>
+    <div class="box" id="o2"><span class="k">Air <span id="o2Val">100%</span></span><div class="bar"><div id="o2Fill"></div></div></div>
+    <div class="box" id="sonar">
+      <svg viewBox="-20 -20 40 40" aria-hidden="true">
+        <circle r="17" fill="none" stroke="#1e1e1e" stroke-width="2"/>
+        <g id="sonarArrow"><path d="M0,-14 L6,2 L0,-2 L-6,2 Z" fill="#e2552d"/></g>
+      </svg>
+      <span class="k">Pearl</span><span class="v" id="sonarDist">--</span>
+    </div>
   </div>
   <div id="toast" class="hud"></div>
   <div id="pad" aria-label="Swim controls">
-    <button type="button" data-dir="up" aria-label="Swim up">▲</button>
-    <button type="button" data-dir="left" aria-label="Swim left">◀</button>
-    <button type="button" data-dir="right" aria-label="Swim right">▶</button>
-    <button type="button" data-dir="down" aria-label="Swim down">▼</button>
+    <button type="button" data-dir="up" aria-label="Swim up"><svg viewBox="0 0 18 18"><path d="M9 3 L16 14 L2 14 Z" fill="#1e1e1e"/></svg></button>
+    <button type="button" data-dir="left" aria-label="Swim left"><svg viewBox="0 0 18 18"><path d="M3 9 L14 2 L14 16 Z" fill="#1e1e1e"/></svg></button>
+    <button type="button" data-dir="right" aria-label="Swim right"><svg viewBox="0 0 18 18"><path d="M15 9 L4 2 L4 16 Z" fill="#1e1e1e"/></svg></button>
+    <button type="button" data-dir="down" aria-label="Swim down"><svg viewBox="0 0 18 18"><path d="M9 15 L16 4 L2 4 Z" fill="#1e1e1e"/></svg></button>
   </div>
 </div>
 
 <div id="startScreen" class="screen">
   <div class="panel">
-    <p class="eyebrow">A paper lagoon · 20 pearls</p>
-    <h1>Blue Hollow</h1>
-    <p>Clams on the floor of the hollow are holding pearls, each marked by a sparkle. Collect them all before your tank runs dry. Surface to breathe, and give the jellyfish room.</p>
-    <dl class="keys" id="keyList">
-      <dt>Arrows</dt><dd>Swim (keyboard, or the arrow pad on screen)</dd>
-      <dt>Click</dt><dd>Swim to that spot, or to a clam</dd>
-      <dt>Surface</dt><dd>Refill your tank</dd>
-    </dl>
+    <div class="head">
+      <div class="num"><b>20</b></div>
+      <div><p class="eyebrow">A lagoon dive</p><h1>Blue Hollow</h1></div>
+    </div>
+    <p>Twenty clams sit on the steps of the lagoon floor, each holding a pearl. Collect them all before your air runs out.</p>
+    <ul class="legend">
+      <li>
+        <svg viewBox="0 0 64 48" aria-hidden="true"><rect x="22" y="4" width="20" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><path d="M32 8 L37 16 L27 16 Z" fill="#1e1e1e"/><rect x="4" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><rect x="24" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><rect x="44" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/></svg>
+        <b>Swim</b><span>Arrow keys, or click where to go</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 64 48" aria-hidden="true"><path d="M8 40 A24 24 0 0 1 56 40 Z" fill="#f4efe3" stroke="#1e1e1e" stroke-width="2"/><path d="M32 40 L14 22 M32 40 L24 17 M32 40 L32 16 M32 40 L40 17 M32 40 L50 22" stroke="#1e1e1e" stroke-width="1.5"/><circle cx="32" cy="33" r="6" fill="#fff" stroke="#1e1e1e" stroke-width="2"/><path d="M50 4 l2 5 5 -2 -2 5 5 2 -5 2 2 5 -5 -2 -2 5 -2 -5 -5 2 2 -5 -5 -2 5 -2 -2 -5 5 2 Z" fill="#e2552d"/></svg>
+        <b>Collect</b><span>Pearls from the clams</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 64 48" aria-hidden="true"><path d="M16 22 A16 16 0 0 1 48 22 Z" fill="#e3a9a4" stroke="#1e1e1e" stroke-width="2"/><path d="M20 22 V44 M26 22 V40 M32 22 V45 M38 22 V40 M44 22 V44" stroke="#1e1e1e" stroke-width="1.5"/></svg>
+        <b>Avoid</b><span>Jellyfish sting your air</span>
+      </li>
+      <li>
+        <svg viewBox="0 0 64 48" aria-hidden="true"><rect x="0" y="28" width="64" height="20" fill="#86b4de"/><path d="M10 22 H54 L48 30 H16 Z" fill="#e2552d"/><rect x="22" y="10" width="18" height="12" fill="#f4efe3" stroke="#1e1e1e" stroke-width="2"/><path d="M28 10 V22 M34 10 V22" stroke="#1e1e1e" stroke-width="1.5"/></svg>
+        <b>Breathe</b><span>Swim up to the surface</span>
+      </li>
+    </ul>
     <button class="go" id="startBtn" type="button">Dive in</button>
   </div>
 </div>
 
 <div id="endScreen" class="screen" hidden>
   <div class="panel">
-    <p class="eyebrow" id="endEyebrow">Dive log</p>
-    <h2 id="endTitle">Out of air</h2>
+    <div class="head">
+      <div class="num"><b id="endNum">0</b></div>
+      <div><p class="eyebrow" id="endEyebrow">Dive log</p><h2 id="endTitle">Out of air</h2></div>
+    </div>
     <p id="endText"></p>
     <button class="go" id="restartBtn" type="button">Dive again</button>
   </div>
