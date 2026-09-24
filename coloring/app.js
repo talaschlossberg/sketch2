@@ -4,14 +4,16 @@
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
-// Detail levels 1..5: working size, smoothing, line width (sigmaC), stroke coherence
+const LINE_WIDTH = 2.6; // stroke width in image pixels at a 480px working size
+
+// Detail levels 1..5: working size, smoothing, line scale (sigmaC), stroke coherence
 // (sigmaM), how much of the page gets inked (inkFrac), and cleanup sizes.
 const DETAIL = {
-  1: { side: 360, sigmaR: 34, smoothPasses: 3, etfRadius: 5, sigmaC: 1.3, sigmaM: 3.5, inkFrac: 0.035, passes: 2, closeR: 2, minInk: 10, minSpace: 40, K: 3 },
-  2: { side: 420, sigmaR: 30, smoothPasses: 3, etfRadius: 5, sigmaC: 1.2, sigmaM: 3.2, inkFrac: 0.050, passes: 2, closeR: 2, minInk: 8, minSpace: 36, K: 4 },
-  3: { side: 480, sigmaR: 26, smoothPasses: 2, etfRadius: 5, sigmaC: 1.1, sigmaM: 3.0, inkFrac: 0.065, passes: 2, closeR: 2, minInk: 8, minSpace: 32, K: 4 },
-  4: { side: 560, sigmaR: 22, smoothPasses: 2, etfRadius: 4, sigmaC: 1.0, sigmaM: 3.0, inkFrac: 0.080, passes: 2, closeR: 2, minInk: 6, minSpace: 28, K: 5 },
-  5: { side: 640, sigmaR: 18, smoothPasses: 1, etfRadius: 4, sigmaC: 1.0, sigmaM: 2.5, inkFrac: 0.100, passes: 1, closeR: 1, minInk: 6, minSpace: 24, K: 6 },
+  1: { side: 360, sigmaR: 34, smoothPasses: 3, etfRadius: 5, sigmaC: 1.3, sigmaM: 4.5, inkFrac: 0.035, passes: 2, closeR: 2, minInk: 12, spur: 8, bridge: 10, reach: 28, K: 3, fenceGap: 5, minStroke: 22, minSpace: 60 },
+  2: { side: 420, sigmaR: 30, smoothPasses: 3, etfRadius: 5, sigmaC: 1.2, sigmaM: 4.0, inkFrac: 0.050, passes: 2, closeR: 2, minInk: 10, spur: 7, bridge: 9, reach: 26, K: 4, fenceGap: 5, minStroke: 20, minSpace: 50 },
+  3: { side: 480, sigmaR: 26, smoothPasses: 2, etfRadius: 5, sigmaC: 1.1, sigmaM: 4.0, inkFrac: 0.065, passes: 2, closeR: 2, minInk: 10, spur: 6, bridge: 8, reach: 24, K: 4, fenceGap: 4, minStroke: 16, minSpace: 40 },
+  4: { side: 560, sigmaR: 22, smoothPasses: 2, etfRadius: 4, sigmaC: 1.0, sigmaM: 3.5, inkFrac: 0.080, passes: 2, closeR: 2, minInk: 8, spur: 6, bridge: 8, reach: 22, K: 5, fenceGap: 4, minStroke: 13, minSpace: 34 },
+  5: { side: 640, sigmaR: 18, smoothPasses: 1, etfRadius: 4, sigmaC: 1.0, sigmaM: 3.0, inkFrac: 0.100, passes: 1, closeR: 1, minInk: 8, spur: 5, bridge: 7, reach: 20, K: 6, fenceGap: 4, minStroke: 10, minSpace: 28 },
 };
 
 // Palette: each color has its own note (A-minor pentatonic, low → high).
@@ -391,6 +393,29 @@ function mergeSmall(lab, W, H, count, areas, opts) {
   return { lab, count: m, areas: outAreas };
 }
 
+// Silhouette strokes from a coarse color segmentation, only where no drawn line is within
+// `gap` pixels already. These close a subject's outline where the line drawing missed it.
+function fenceLines(fence, sk, W, H, gap) {
+  const n = W * H;
+  const near = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!sk[i]) continue;
+    const x = i % W, y = (i - x) / W;
+    for (let dy = -gap; dy <= gap; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
+      for (let dx = -gap; dx <= gap; dx++) { const xx = x + dx; if (xx < 0 || xx >= W) continue; near[yy * W + xx] = 1; } }
+  }
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = i % W;
+    const border = (x < W - 1 && fence[i] !== fence[i + 1]) || (i < n - W && fence[i] !== fence[i + W]);
+    if (border && !near[i]) out[i] = 1;
+  }
+  // Keep only fence pieces long enough to matter.
+  const c = inkComponents(out, W, H);
+  for (let i = 0; i < n; i++) if (out[i] && c.areas[c.lab[i]] < 30) out[i] = 0;
+  return out;
+}
+
 // Morphological closing of a binary mask: bridges gaps up to ~2r pixels wide.
 function morphClose(mask, W, H, r) {
   const n = W * H;
@@ -415,23 +440,28 @@ function morphClose(mask, W, H, r) {
   return run(run(mask, 1), 0); // dilate ink, then erode it back
 }
 
-// Hollow out thick ink: anything deeper than `depth` pixels inside a stroke becomes paper,
-// so a solid dark patch turns into an outlined shape you can color, like a coloring book.
-function hollowInk(ink, W, H, depth) {
+// Connected components of ink pixels with diagonal neighbours counted (8-connected).
+function inkComponents(mask, W, H) {
   const n = W * H;
-  let inside = ink;
-  for (let pass = 0; pass < depth; pass++) {
-    const out = new Uint8Array(n);
-    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      if (inside[i] && inside[i - 1] && inside[i + 1] && inside[i - W] && inside[i + W] &&
-          inside[i - W - 1] && inside[i - W + 1] && inside[i + W - 1] && inside[i + W + 1]) out[i] = 1;
+  const lab = new Int32Array(n).fill(-1);
+  const stack = new Int32Array(n);
+  const areas = [];
+  let next = 0;
+  for (let s = 0; s < n; s++) {
+    if (!mask[s] || lab[s] !== -1) continue;
+    const L = next++;
+    let sp = 0, area = 0;
+    stack[sp++] = s; lab[s] = L;
+    while (sp > 0) {
+      const i = stack[--sp]; area++;
+      const x = i % W, y = (i - x) / W;
+      for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= W) continue;
+          const j = yy * W + xx; if (mask[j] && lab[j] === -1) { lab[j] = L; stack[sp++] = j; } } }
     }
-    inside = out;
+    areas.push(area);
   }
-  const res = new Uint8Array(n);
-  for (let i = 0; i < n; i++) res[i] = ink[i] && !inside[i] ? 1 : 0;
-  return res;
+  return { lab, count: next, areas };
 }
 
 // Connected components of a label map (4-connected, equal values); returns labels and areas.
@@ -459,67 +489,367 @@ function components(mask, W, H) {
   return { lab, count: next, areas };
 }
 
-// Turn the line map into ink (label 0) and colorable spaces (labels 1..). `fence` is a
-// coarse color segmentation: spaces never cross a fence, so a subject stays separate from
-// its background even where the drawn outline has a gap.
-function spacesFromLines(lineMap, fence, W, H, threshold, closeR, minInk, minSpace) {
-  const n = W * H;
-  let ink = new Uint8Array(n);
-  for (let i = 0; i < n; i++) ink[i] = lineMap[i] < threshold ? 1 : 0;
-  ink = morphClose(ink, W, H, closeR);
-  ink = hollowInk(ink, W, H, 2);
-  // Drop ink specks.
-  let c = components(ink, W, H);
-  for (let i = 0; i < n; i++) if (ink[i] && c.areas[c.lab[i]] < minInk) ink[i] = 0;
-  // Spaces: connected paper pixels within one fence cell.
-  const key = new Int32Array(n);
-  for (let i = 0; i < n; i++) key[i] = ink[i] ? -1 : fence[i];
-  c = components(key, W, H);
-  const count = c.count;
-  const isInk = new Uint8Array(count);
-  for (let i = 0; i < n; i++) if (ink[i]) isInk[c.lab[i]] = 1;
-  // Fold small spaces into the neighbouring space they touch most (never into ink).
-  const parent = new Int32Array(count);
-  for (let i = 0; i < count; i++) parent[i] = i;
-  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
-  const area = Float64Array.from(c.areas);
-  for (let pass = 0; pass < 3; pass++) {
-    const touch = new Map();
-    const bump = (a, b) => { const k = a * count + b; touch.set(k, (touch.get(k) || 0) + 1); };
-    for (let i = 0; i < n; i++) {
-      const a = find(c.lab[i]);
-      if (isInk[a]) continue;
-      const x = i % W;
-      if (x < W - 1) { const b = find(c.lab[i + 1]); if (a !== b && !isInk[b]) { if (area[a] < minSpace) bump(a, b); if (area[b] < minSpace) bump(b, a); } }
-      if (i < n - W) { const b = find(c.lab[i + W]); if (a !== b && !isInk[b]) { if (area[a] < minSpace) bump(a, b); if (area[b] < minSpace) bump(b, a); } }
+// ---- Single-width connected lines -------------------------------------------------
+
+const NB8 = (W) => [1, -1, W, -W, W + 1, W - 1, -W + 1, -W - 1];
+
+// Zhang–Suen thinning: reduces ink to a one-pixel-wide skeleton.
+function thin(mask, W, H) {
+  const a = Uint8Array.from(mask);
+  let changed = true;
+  const del = [];
+  while (changed) {
+    changed = false;
+    for (let step = 0; step < 2; step++) {
+      del.length = 0;
+      for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+        const i = y * W + x;
+        if (!a[i]) continue;
+        const p2 = a[i - W], p3 = a[i - W + 1], p4 = a[i + 1], p5 = a[i + W + 1], p6 = a[i + W], p7 = a[i + W - 1], p8 = a[i - 1], p9 = a[i - W - 1];
+        const B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+        if (B < 2 || B > 6) continue;
+        let A = 0;
+        if (!p2 && p3) A++; if (!p3 && p4) A++; if (!p4 && p5) A++; if (!p5 && p6) A++;
+        if (!p6 && p7) A++; if (!p7 && p8) A++; if (!p8 && p9) A++; if (!p9 && p2) A++;
+        if (A !== 1) continue;
+        if (step === 0) { if (p2 * p4 * p6 !== 0 || p4 * p6 * p8 !== 0) continue; }
+        else { if (p2 * p4 * p8 !== 0 || p2 * p6 * p8 !== 0) continue; }
+        del.push(i);
+      }
+      if (del.length) { changed = true; for (const i of del) a[i] = 0; }
     }
-    const best = new Map();
-    for (const [k, cnt] of touch) {
-      const a = Math.floor(k / count), b = k - a * count;
-      const cur = best.get(a);
-      if (!cur || cnt > cur.cnt) best.set(a, { b, cnt });
-    }
-    if (!best.size) break;
-    let merged = 0;
-    for (const [a, { b }] of best) {
-      const ra = find(a), rb = find(b);
-      if (ra !== a || ra === rb || area[ra] >= minSpace) continue;
-      parent[ra] = rb; area[rb] += area[ra]; merged++;
-    }
-    if (!merged) break;
   }
-  // Leftover tiny spaces with no paper neighbour become ink.
+  return a;
+}
+
+function degree8(a, W, H, i) {
+  const x = i % W, y = (i - x) / W;
+  let d = 0;
+  for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
+    for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; const xx = x + dx; if (xx < 0 || xx >= W) continue; if (a[yy * W + xx]) d++; } }
+  return d;
+}
+
+// Remove short hairs: branches shorter than `maxLen` that end at a junction.
+function pruneSpurs(a, W, H, maxLen) {
+  const n = W * H;
+  for (let round = 0; round < 2; round++) {
+    const ends = [];
+    for (let i = 0; i < n; i++) if (a[i] && degree8(a, W, H, i) === 1) ends.push(i);
+    for (const e of ends) {
+      if (!a[e]) continue;
+      const path = [e];
+      let prev = -1, cur = e, ok = false;
+      for (let step = 0; step < maxLen; step++) {
+        const x = cur % W, y = (cur - x) / W;
+        let next = -1, cnt = 0;
+        for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
+          for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; const xx = x + dx; if (xx < 0 || xx >= W) continue;
+            const j = yy * W + xx; if (a[j] && j !== prev && path.indexOf(j) === -1) { next = j; cnt++; } } }
+        if (cnt === 0) break;               // isolated stub: leave it
+        if (cnt >= 2 || degree8(a, W, H, next) >= 3) { ok = true; break; } // reached a junction
+        prev = cur; cur = next; path.push(cur);
+      }
+      if (ok) for (const p of path) a[p] = 0;
+    }
+  }
+  return a;
+}
+
+function drawLine(a, W, x0, y0, x1, y1) {
+  let dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy;
+  for (;;) {
+    a[y0 * W + x0] = 1;
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+
+// Close gaps: every loose end first tries to continue straight ahead, then reaches for the
+// nearest line pixel that is not part of its own stroke, then the picture edge if close.
+function bridgeEnds(a, W, H, R, reach) {
+  const n = W * H;
+  const ends = [];
+  for (let i = 0; i < n; i++) if (a[i] && degree8(a, W, H, i) === 1) ends.push(i);
+  const own = new Set();
+  const hitNear = (px, py) => {
+    for (let dy = -1; dy <= 1; dy++) { const yy = py + dy; if (yy < 0 || yy >= H) continue;
+      for (let dx = -1; dx <= 1; dx++) { const xx = px + dx; if (xx < 0 || xx >= W) continue;
+        const j = yy * W + xx; if (a[j] && !own.has(j)) return j; } }
+    return -1;
+  };
+  for (const e of ends) {
+    if (!a[e] || degree8(a, W, H, e) !== 1) continue;
+    const ex = e % W, ey = (e - ex) / W;
+    own.clear(); own.add(e);
+    let cur = e, tail = e;
+    for (let s = 0; s < reach + 4; s++) {
+      const x = cur % W, y = (cur - x) / W;
+      let next = -1;
+      for (let dy = -1; dy <= 1 && next === -1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; const xx = x + dx; if (xx < 0 || xx >= W) continue;
+          const j = yy * W + xx; if (a[j] && !own.has(j)) { next = j; break; } } }
+      if (next === -1) break;
+      own.add(next); cur = next; if (s === 5) tail = cur;
+    }
+    if (tail === e) tail = cur;
+    const tx = tail % W, ty = (tail - tx) / W;
+    let vx = ex - tx, vy = ey - ty;
+    const vl = Math.hypot(vx, vy);
+    let done = false;
+    if (vl > 0.5) {
+      vx /= vl; vy /= vl;
+      for (let s = 3; s <= reach; s++) {
+        const px = Math.round(ex + vx * s), py = Math.round(ey + vy * s);
+        if (px < 0 || py < 0 || px >= W || py >= H) {
+          if (s <= R) { drawLine(a, W, ex, ey, Math.min(W - 1, Math.max(0, px)), Math.min(H - 1, Math.max(0, py))); done = true; }
+          break;
+        }
+        const j = hitNear(px, py);
+        if (j !== -1) { drawLine(a, W, ex, ey, j % W, (j - j % W) / W); done = true; break; }
+      }
+    }
+    if (!done) {
+      let best = -1, bd = R * R + 1;
+      for (let dy = -R; dy <= R; dy++) { const yy = ey + dy; if (yy < 0 || yy >= H) continue;
+        for (let dx = -R; dx <= R; dx++) { const xx = ex + dx; if (xx < 0 || xx >= W) continue;
+          const j = yy * W + xx; if (!a[j] || own.has(j)) continue;
+          const d = dx * dx + dy * dy; if (d < bd) { bd = d; best = j; } } }
+      if (best !== -1) { drawLine(a, W, ex, ey, best % W, (best - best % W) / W); done = true; }
+    }
+    if (!done) {
+      const dl = ex, dr = W - 1 - ex, dt = ey, db = H - 1 - ey;
+      const m = Math.min(dl, dr, dt, db);
+      if (m <= R) {
+        if (m === dl) drawLine(a, W, ex, ey, 0, ey); else if (m === dr) drawLine(a, W, ex, ey, W - 1, ey);
+        else if (m === dt) drawLine(a, W, ex, ey, ex, 0); else drawLine(a, W, ex, ey, ex, H - 1);
+      }
+    }
+  }
+  return a;
+}
+
+// Spaces are the 4-connected paper pixels between skeleton lines. Tiny enclosed spaces are
+// opened up by erasing the line around them (never filled with ink).
+function spacesFromSkeleton(a, W, H, minSpace) {
+  const n = W * H;
+  for (let round = 0; round < 3; round++) {
+    const c = components(a, W, H);
+    let erased = 0;
+    for (let i = 0; i < n; i++) {
+      if (a[i] || c.areas[c.lab[i]] >= minSpace) continue;
+      const x = i % W, y = (i - x) / W;
+      for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= W) continue;
+          const j = yy * W + xx; if (a[j]) { a[j] = 0; erased++; } } }
+    }
+    if (!erased) break;
+  }
+  const c = components(a, W, H);
   const lab = new Int32Array(n);
-  const remap = new Int32Array(count).fill(-1);
+  const remap = new Int32Array(c.count).fill(-1);
   const areas = [0];
   let m = 1;
   for (let i = 0; i < n; i++) {
-    const r = find(c.lab[i]);
-    if (ink[i] || area[r] < minSpace) { lab[i] = 0; areas[0]++; continue; }
-    if (remap[r] === -1) { remap[r] = m++; areas.push(0); }
-    lab[i] = remap[r]; areas[lab[i]]++;
+    if (a[i]) { lab[i] = 0; areas[0]++; continue; }
+    const L = c.lab[i];
+    if (remap[L] === -1) { remap[L] = m++; areas.push(0); }
+    lab[i] = remap[L]; areas[lab[i]]++;
   }
   return { lab, count: m, areas };
+}
+
+// Link edge pixels into polylines (8-connected walks), drop short ones.
+function edgeChains(edge, W, H, minLen) {
+  const n = W * H;
+  const seen = new Uint8Array(n);
+  const chains = [];
+  const nb = [1, -1, W, -W, W + 1, W - 1, -W + 1, -W - 1];
+  const degree = (i) => {
+    const x = i % W; let d = 0;
+    for (let k = 0; k < 8; k++) {
+      const j = i + nb[k]; if (j < 0 || j >= n) continue;
+      const xj = j % W; if (Math.abs(xj - x) > 1) continue;
+      if (edge[j]) d++;
+    }
+    return d;
+  };
+  const walk = (start) => {
+    const pts = []; let cur = start;
+    while (cur !== -1) {
+      seen[cur] = 1; pts.push(cur % W + 0.5, ((cur / W) | 0) + 0.5);
+      const x = cur % W; let next = -1;
+      for (let k = 0; k < 8; k++) {
+        const j = cur + nb[k]; if (j < 0 || j >= n) continue;
+        if (Math.abs((j % W) - x) > 1) continue;
+        if (edge[j] && !seen[j]) { next = j; break; }
+      }
+      cur = next;
+    }
+    return pts;
+  };
+  const collect = (pts) => { if (pts.length / 2 >= minLen) chains.push(pts); };
+  for (let i = 0; i < n; i++) if (edge[i] && !seen[i] && degree(i) <= 1) collect(walk(i));
+  for (let i = 0; i < n; i++) if (edge[i] && !seen[i]) collect(walk(i));
+  return chains;
+}
+
+function simplifyOpen(pts, eps) {
+  const m = pts.length / 2;
+  const xs = new Array(m), ys = new Array(m);
+  for (let i = 0; i < m; i++) { xs[i] = pts[2 * i]; ys[i] = pts[2 * i + 1]; }
+  const keep = new Uint8Array(m); keep[0] = 1; keep[m - 1] = 1;
+  rdp(xs, ys, keep, 0, m - 1, eps);
+  const out = [];
+  for (let i = 0; i < m; i++) if (keep[i]) out.push(xs[i], ys[i]);
+  return out;
+}
+
+function chaikinOpen(pts) {
+  const n = pts.length / 2;
+  if (n < 3) return pts;
+  const out = [pts[0], pts[1]];
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = pts[2 * i], y0 = pts[2 * i + 1], x1 = pts[2 * i + 2], y1 = pts[2 * i + 3];
+    out.push(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1, 0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1);
+  }
+  out.push(pts[2 * n - 2], pts[2 * n - 1]);
+  return out;
+}
+
+function chainsToPath(chains) {
+  let d = '';
+  for (const pts of chains) {
+    d += 'M' + fmt(pts[0]) + ' ' + fmt(pts[1]);
+    for (let i = 2; i < pts.length; i += 2) d += 'L' + fmt(pts[i]) + ' ' + fmt(pts[i + 1]);
+  }
+  return d;
+}
+
+// Trace every label's boundary as closed loops on the pixel grid,
+// then simplify. Returns an array (indexed by label) of loops (flat [x,y,...]).
+function traceLabels(lab, W, H, count) {
+  const W1 = W + 1;
+  const V = W1 * (H + 1);
+  const edgeLists = new Array(count);
+  for (let L = 0; L < count; L++) edgeLists[L] = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x, L = lab[i];
+      const list = edgeLists[L];
+      const tl = y * W1 + x, tr = tl + 1, bl = tl + W1, br = bl + 1;
+      if (y === 0 || lab[i - W] !== L) list.push(tl, tr);     // top, going right
+      if (x === W - 1 || lab[i + 1] !== L) list.push(tr, br); // right, going down
+      if (y === H - 1 || lab[i + W] !== L) list.push(br, bl); // bottom, going left
+      if (x === 0 || lab[i - 1] !== L) list.push(bl, tl);     // left, going up
+    }
+  }
+  const nextA = new Int32Array(V).fill(-1);
+  const nextB = new Int32Array(V).fill(-1);
+  const result = new Array(count);
+  for (let L = 0; L < count; L++) {
+    const list = edgeLists[L];
+    for (let k = 0; k < list.length; k += 2) {
+      const s = list[k], e = list[k + 1];
+      if (nextA[s] === -1) nextA[s] = e; else nextB[s] = e;
+    }
+    const loops = [];
+    for (let k = 0; k < list.length; k += 2) {
+      const start = list[k];
+      if (nextA[start] === -1) continue;
+      const pts = [];
+      let cur = start;
+      do {
+        pts.push(cur % W1, (cur / W1) | 0);
+        const nx = nextA[cur];
+        if (nx === -1) break;
+        nextA[cur] = nextB[cur]; nextB[cur] = -1;
+        cur = nx;
+      } while (cur !== start);
+      loops.push(chaikin(simplifyLoop(pts, 1.6), W, H));
+    }
+    result[L] = loops;
+  }
+  return result;
+}
+
+// Drop collinear points, then Ramer–Douglas–Peucker on the closed loop.
+function simplifyLoop(flat, eps) {
+  const n = flat.length / 2;
+  const xs = [], ys = [];
+  for (let i = 0; i < n; i++) {
+    const x = flat[2 * i], y = flat[2 * i + 1];
+    const px = flat[2 * ((i + n - 1) % n)], py = flat[2 * ((i + n - 1) % n) + 1];
+    const nx = flat[2 * ((i + 1) % n)], ny = flat[2 * ((i + 1) % n) + 1];
+    if ((x - px) * (ny - y) - (y - py) * (nx - x) !== 0) { xs.push(x); ys.push(y); }
+  }
+  const m = xs.length;
+  if (m <= 4) { const out = []; for (let i = 0; i < m; i++) out.push(xs[i], ys[i]); return out; }
+  // Split the ring at the point farthest from point 0 so RDP sees two open chains.
+  let far = 1, fd = -1;
+  for (let i = 1; i < m; i++) { const d = (xs[i] - xs[0]) ** 2 + (ys[i] - ys[0]) ** 2; if (d > fd) { fd = d; far = i; } }
+  const keep = new Uint8Array(m);
+  keep[0] = 1; keep[far] = 1;
+  rdp(xs, ys, keep, 0, far, eps);
+  rdpWrap(xs, ys, keep, far, m, eps);
+  const out = [];
+  for (let i = 0; i < m; i++) if (keep[i]) out.push(xs[i], ys[i]);
+  return out;
+}
+
+function rdp(xs, ys, keep, a, b, eps) {
+  const stack = [[a, b]];
+  while (stack.length) {
+    const [i0, i1] = stack.pop();
+    if (i1 - i0 < 2) continue;
+    const x0 = xs[i0], y0 = ys[i0], x1 = xs[i1], y1 = ys[i1];
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1;
+    let best = -1, bd = eps;
+    for (let i = i0 + 1; i < i1; i++) {
+      const d = Math.abs(dy * (xs[i] - x0) - dx * (ys[i] - y0)) / len;
+      if (d > bd) { bd = d; best = i; }
+    }
+    if (best !== -1) { keep[best] = 1; stack.push([i0, best], [best, i1]); }
+  }
+}
+// Second chain runs from `far` back around to index 0 (index m ≡ 0).
+function rdpWrap(xs, ys, keep, far, m, eps) {
+  const idx = [];
+  for (let i = far; i <= m; i++) idx.push(i % m);
+  const sx = idx.map((i) => xs[i]), sy = idx.map((i) => ys[i]);
+  const k = new Uint8Array(idx.length); k[0] = 1; k[idx.length - 1] = 1;
+  rdp(sx, sy, k, 0, idx.length - 1, eps);
+  for (let j = 1; j < idx.length - 1; j++) if (k[j]) keep[idx[j]] = 1;
+}
+
+// One round of Chaikin corner cutting: turns the polygon into a soft, hand-drawn line.
+// Points on the picture's edge stay put so the outer corners remain square.
+function chaikin(pts, W, H) {
+  const n = pts.length / 2;
+  if (n < 4) return pts;
+  const onBorder = (x, y) => x === 0 || y === 0 || x === W || y === H;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const x0 = pts[2 * i], y0 = pts[2 * i + 1], x1 = pts[2 * j], y1 = pts[2 * j + 1];
+    if (onBorder(x0, y0)) out.push(x0, y0); else out.push(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1);
+    if (onBorder(x1, y1)) out.push(x1, y1); else out.push(0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1);
+  }
+  return out;
+}
+
+const fmt = (v) => (Math.round(v * 10) / 10).toString();
+function loopsToPath(loops) {
+  let d = '';
+  for (const pts of loops) {
+    if (pts.length < 6) continue;
+    d += 'M' + fmt(pts[0]) + ' ' + fmt(pts[1]);
+    for (let i = 2; i < pts.length; i += 2) d += 'L' + fmt(pts[i]) + ' ' + fmt(pts[i + 1]);
+    d += 'Z';
+  }
+  return d;
 }
 
 // Trace every label's boundary as closed loops on the pixel grid,
@@ -631,7 +961,6 @@ function chaikin(pts, W, H) {
   return out;
 }
 
-const fmt = (v) => (Math.round(v * 10) / 10).toString();
 function loopsToPath(loops) {
   let d = '';
   for (const pts of loops) {
@@ -695,7 +1024,17 @@ function traceImage(img, detailLevel) {
   const lines = new Float32Array(n);
   for (let i = 0; i < n; i++) lines[i] = h[i] < cutoff ? 0 : 1;
 
-  // Coarse color segmentation used only as invisible fences between spaces.
+  let ink = new Uint8Array(n);
+  for (let i = 0; i < n; i++) ink[i] = lines[i] === 0 ? 1 : 0;
+  ink = morphClose(ink, W, H, cfg.closeR);
+  {
+    const c = inkComponents(ink, W, H);
+    for (let i = 0; i < n; i++) if (ink[i] && c.areas[c.lab[i]] < cfg.minInk) ink[i] = 0;
+  }
+  let sk = thin(ink, W, H);
+  sk = pruneSpurs(sk, W, H, cfg.spur);
+
+  // Coarse color segmentation → silhouette strokes where the line drawing left gaps.
   const labc = rgbToLab(smooth, n);
   let cls = kmeansLabels(labc, n, cfg.K, 8);
   cls = modeFilter(cls, W, H, cfg.K, 2);
@@ -703,10 +1042,22 @@ function traceImage(img, detailLevel) {
   const fence = mergeSmall(comp.lab, W, H, comp.count, comp.areas, {
     minArea: 0.01 * n, islandArea: 0.03 * n, sliverArea: 0.03 * n, sliverRatio: 6,
   }).lab;
+  const extra = fenceLines(fence, sk, W, H, cfg.fenceGap);
+  for (let i = 0; i < n; i++) if (extra[i]) sk[i] = 1;
+  sk = thin(sk, W, H);
 
-  const { lab, count, areas } = spacesFromLines(lines, fence, W, H, 0.5, cfg.closeR, cfg.minInk, cfg.minSpace);
-  const loops = traceLabels(lab, W, H, count, 1.2);
+  sk = bridgeEnds(sk, W, H, cfg.bridge, cfg.reach);
+  sk = pruneSpurs(sk, W, H, 3);
+  {
+    // Leftover short dashes that connected to nothing are dust: drop them.
+    const c = inkComponents(sk, W, H);
+    for (let i = 0; i < n; i++) if (sk[i] && c.areas[c.lab[i]] < cfg.minStroke) sk[i] = 0;
+  }
+  const { lab, count, areas } = spacesFromSkeleton(sk, W, H, cfg.minSpace);
+  const loops = traceLabels(lab, W, H, count, 1.0);
+  const chains = edgeChains(sk, W, H, 2).map((c) => chaikinOpen(simplifyOpen(c, 0.9)));
 
+  const lw = fmt(LINE_WIDTH * Math.max(W, H) / 480);
   const parts = [];
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
   parts.push(`<rect width="${W}" height="${H}" fill="#fff"/>`);
@@ -717,7 +1068,7 @@ function traceImage(img, detailLevel) {
     parts.push(`<path data-id="${L}" data-area="${areas[L]}" d="${d}" fill="${BLANK}" stroke="${BLANK}"/>`);
   }
   parts.push('</g>');
-  parts.push(`<path id="ink" d="${loopsToPath(loops[0])}" fill="${INK}" fill-rule="evenodd" pointer-events="none"/>`);
+  parts.push(`<path id="ink" d="${chainsToPath(chains)}" fill="none" stroke="${INK}" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>`);
   parts.push('</svg>');
   return { svgText: parts.join(''), W, H, regionCount: count - 1 };
 }
