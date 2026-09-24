@@ -4,18 +4,14 @@
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
-// Line thickness, in working-image pixels, at a 640px working size (scaled for smaller sizes).
-const LINE_WIDTH = 2.6;          // shape outline
-const DETAIL_WIDTH = 1.7;        // interior pen lines
-
-// Detail levels 1..5 → working size, color groups, smoothing, smallest space, island/streak
-// removal limits, edge sensitivity, shortest pen line
+// Detail levels 1..5: working size, smoothing, line width (sigmaC), stroke coherence
+// (sigmaM), how much of the page gets inked (inkFrac), and cleanup sizes.
 const DETAIL = {
-  1: { side: 300, K: 3,  sigmaR: 40, minAreaFrac: 0.0200, islandFrac: 0.050, sliverFrac: 0.040, sliverRatio: 5,  edgeFrac: 0.008, minChain: 30 },
-  2: { side: 360, K: 4,  sigmaR: 36, minAreaFrac: 0.0100, islandFrac: 0.035, sliverFrac: 0.030, sliverRatio: 6,  edgeFrac: 0.014, minChain: 26 },
-  3: { side: 440, K: 5,  sigmaR: 32, minAreaFrac: 0.0050, islandFrac: 0.020, sliverFrac: 0.020, sliverRatio: 7,  edgeFrac: 0.022, minChain: 22 },
-  4: { side: 540, K: 7,  sigmaR: 28, minAreaFrac: 0.0022, islandFrac: 0.008, sliverFrac: 0.010, sliverRatio: 9,  edgeFrac: 0.034, minChain: 18 },
-  5: { side: 640, K: 10, sigmaR: 24, minAreaFrac: 0.0009, islandFrac: 0.003, sliverFrac: 0.004, sliverRatio: 12, edgeFrac: 0.050, minChain: 14 },
+  1: { side: 360, sigmaR: 34, smoothPasses: 3, etfRadius: 5, sigmaC: 1.3, sigmaM: 3.5, inkFrac: 0.035, passes: 2, closeR: 2, minInk: 10, minSpace: 40, K: 3 },
+  2: { side: 420, sigmaR: 30, smoothPasses: 3, etfRadius: 5, sigmaC: 1.2, sigmaM: 3.2, inkFrac: 0.050, passes: 2, closeR: 2, minInk: 8, minSpace: 36, K: 4 },
+  3: { side: 480, sigmaR: 26, smoothPasses: 2, etfRadius: 5, sigmaC: 1.1, sigmaM: 3.0, inkFrac: 0.065, passes: 2, closeR: 2, minInk: 8, minSpace: 32, K: 4 },
+  4: { side: 560, sigmaR: 22, smoothPasses: 2, etfRadius: 4, sigmaC: 1.0, sigmaM: 3.0, inkFrac: 0.080, passes: 2, closeR: 2, minInk: 6, minSpace: 28, K: 5 },
+  5: { side: 640, sigmaR: 18, smoothPasses: 1, etfRadius: 4, sigmaC: 1.0, sigmaM: 2.5, inkFrac: 0.100, passes: 1, closeR: 1, minInk: 6, minSpace: 24, K: 6 },
 };
 
 // Palette: each color has its own note (A-minor pentatonic, low → high).
@@ -66,7 +62,8 @@ const state = {
 };
 
 // ---------------------------------------------------------------------------
-// Image processing: bilateral smooth → Lab k-means → clean up → merge slivers
+// Image processing: bilateral smooth → edge tangent flow → flow-guided DoG lines
+// (Kang, Lee & Chui, "Coherent Line Drawing") → closed spaces between the lines
 // ---------------------------------------------------------------------------
 
 // Edge-preserving smoothing: washes out texture, keeps object boundaries.
@@ -76,7 +73,7 @@ function bilateral(data, W, H, radius, sigmaS, sigmaR, passes) {
   for (let i = 0, j = 0; i < n; i++, j += 4) { src[i * 3] = data[j]; src[i * 3 + 1] = data[j + 1]; src[i * 3 + 2] = data[j + 2]; }
   const spatial = new Float32Array((2 * radius + 1) * (2 * radius + 1));
   for (let dy = -radius, k = 0; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++, k++) spatial[k] = Math.exp(-(dx * dx + dy * dy) / (2 * sigmaS * sigmaS));
-  const range = new Float32Array(766); // sum of abs channel diffs 0..765
+  const range = new Float32Array(766);
   for (let d = 0; d < 766; d++) range[d] = Math.exp(-(d * d) / (2 * (sigmaR * 3) * (sigmaR * 3)));
   for (let pass = 0; pass < passes; pass++) {
     const out = new Float32Array(n * 3);
@@ -104,6 +101,121 @@ function bilateral(data, W, H, radius, sigmaS, sigmaR, passes) {
     src = out;
   }
   return src;
+}
+
+function gaussianBlur(src, W, H, sigma) {
+  const r = Math.max(1, Math.ceil(sigma * 3));
+  const k = new Float32Array(2 * r + 1);
+  let s = 0;
+  for (let i = -r; i <= r; i++) { k[i + r] = Math.exp(-(i * i) / (2 * sigma * sigma)); s += k[i + r]; }
+  for (let i = 0; i < k.length; i++) k[i] /= s;
+  const tmp = new Float32Array(W * H), out = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let acc = 0;
+    for (let i = -r; i <= r; i++) { let xx = x + i; if (xx < 0) xx = 0; else if (xx >= W) xx = W - 1; acc += src[y * W + xx] * k[i + r]; }
+    tmp[y * W + x] = acc;
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let acc = 0;
+    for (let i = -r; i <= r; i++) { let yy = y + i; if (yy < 0) yy = 0; else if (yy >= H) yy = H - 1; acc += tmp[yy * W + x] * k[i + r]; }
+    out[y * W + x] = acc;
+  }
+  return out;
+}
+
+// Edge tangent flow: a smooth vector field that runs along the picture's edges.
+function edgeTangentFlow(gray, W, H, radius, iters) {
+  const n = W * H;
+  const b = gaussianBlur(gray, W, H, 1.0);
+  let tx = new Float32Array(n), ty = new Float32Array(n);
+  const mag = new Float32Array(n);
+  let maxMag = 1e-6;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    const xl = x > 0 ? i - 1 : i, xr = x < W - 1 ? i + 1 : i, yu = y > 0 ? i - W : i, yd = y < H - 1 ? i + W : i;
+    const gx = (b[xr] - b[xl]) * 0.5, gy = (b[yd] - b[yu]) * 0.5;
+    const m = Math.sqrt(gx * gx + gy * gy);
+    mag[i] = m; if (m > maxMag) maxMag = m;
+    if (m > 1e-6) { tx[i] = -gy / m; ty[i] = gx / m; } else { tx[i] = 0; ty[i] = 0; }
+  }
+  for (let i = 0; i < n; i++) mag[i] /= maxMag;
+  const pass = (sx, sy, horizontal) => {
+    const ox = new Float32Array(n), oy = new Float32Array(n);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const cx = sx[i], cy = sy[i], cm = mag[i];
+      let ax = 0, ay = 0;
+      for (let d = -radius; d <= radius; d++) {
+        let xx = x, yy = y;
+        if (horizontal) { xx += d; if (xx < 0 || xx >= W) continue; } else { yy += d; if (yy < 0 || yy >= H) continue; }
+        const j = yy * W + xx;
+        const dot = cx * sx[j] + cy * sy[j];
+        const wm = (1 + Math.tanh(mag[j] - cm)) * 0.5;
+        const w = (dot >= 0 ? 1 : -1) * Math.abs(dot) * wm;
+        ax += sx[j] * w; ay += sy[j] * w;
+      }
+      const len = Math.sqrt(ax * ax + ay * ay);
+      if (len > 1e-6) { ox[i] = ax / len; oy[i] = ay / len; } else { ox[i] = cx; oy[i] = cy; }
+    }
+    return [ox, oy];
+  };
+  for (let it = 0; it < iters; it++) {
+    [tx, ty] = pass(tx, ty, true);
+    [tx, ty] = pass(tx, ty, false);
+  }
+  return { tx, ty };
+}
+
+// Flow-guided difference of Gaussians. Returns a line strength map: 1 = paper, 0 = ink.
+function flowDoG(gray, W, H, flow, p) {
+  const { tx, ty } = flow;
+  const n = W * H;
+  const sigC = p.sigmaC, sigS = p.sigmaC * 1.6, sigM = p.sigmaM;
+  const T = Math.ceil(sigS * 2.5), S = Math.ceil(sigM * 2.0);
+  const dog = new Float32Array(2 * T + 1);
+  let sc = 0, ss = 0;
+  for (let t = -T; t <= T; t++) { sc += Math.exp(-(t * t) / (2 * sigC * sigC)); ss += Math.exp(-(t * t) / (2 * sigS * sigS)); }
+  for (let t = -T; t <= T; t++) dog[t + T] = Math.exp(-(t * t) / (2 * sigC * sigC)) / sc - p.rho * Math.exp(-(t * t) / (2 * sigS * sigS)) / ss;
+  const gm = new Float32Array(S + 1);
+  for (let s = 0; s <= S; s++) gm[s] = Math.exp(-(s * s) / (2 * sigM * sigM));
+  const sample = (fx, fy) => {
+    let x = fx | 0, y = fy | 0;
+    if (x < 0) x = 0; else if (x >= W) x = W - 1;
+    if (y < 0) y = 0; else if (y >= H) y = H - 1;
+    return gray[y * W + x];
+  };
+  // F(p): DoG across the edge, sampled along the gradient direction at p.
+  const across = (px, py) => {
+    let ix = px | 0, iy = py | 0;
+    if (ix < 0) ix = 0; else if (ix >= W) ix = W - 1;
+    if (iy < 0) iy = 0; else if (iy >= H) iy = H - 1;
+    const j = iy * W + ix;
+    const dx = ty[j], dy = -tx[j];
+    let acc = 0;
+    for (let t = -T; t <= T; t++) acc += sample(px + dx * t, py + dy * t) * dog[t + T];
+    return acc;
+  };
+  const out = new Float32Array(n);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    let sum = across(x + 0.5, y + 0.5) * gm[0], wsum = gm[0];
+    for (let dir = -1; dir <= 1; dir += 2) {
+      let px = x + 0.5, py = y + 0.5;
+      let vx = tx[i] * dir, vy = ty[i] * dir;
+      for (let s = 1; s <= S; s++) {
+        px += vx; py += vy;
+        if (px < 0 || py < 0 || px >= W || py >= H) break;
+        const j = (py | 0) * W + (px | 0);
+        let nx = tx[j], ny = ty[j];
+        if (nx * vx + ny * vy < 0) { nx = -nx; ny = -ny; }
+        if (nx === 0 && ny === 0) break;
+        vx = nx; vy = ny;
+        sum += across(px, py) * gm[s]; wsum += gm[s];
+      }
+    }
+    out[i] = sum / wsum; // negative = ink side
+  }
+  return out;
 }
 
 // sRGB → CIE Lab (D65). Lightness is weighted down a little so shading
@@ -211,31 +323,6 @@ function modeFilter(cls, W, H, K, passes) {
   return a;
 }
 
-// Connected components (4-connected) of equal cluster id.
-function components(cls, W, H) {
-  const n = W * H;
-  const lab = new Int32Array(n).fill(-1);
-  const stack = new Int32Array(n);
-  const areas = [];
-  let next = 0;
-  for (let s = 0; s < n; s++) {
-    if (lab[s] !== -1) continue;
-    const L = next++, c = cls[s];
-    let sp = 0, area = 0;
-    stack[sp++] = s; lab[s] = L;
-    while (sp > 0) {
-      const i = stack[--sp]; area++;
-      const x = i % W;
-      if (x > 0 && lab[i - 1] === -1 && cls[i - 1] === c) { lab[i - 1] = L; stack[sp++] = i - 1; }
-      if (x < W - 1 && lab[i + 1] === -1 && cls[i + 1] === c) { lab[i + 1] = L; stack[sp++] = i + 1; }
-      if (i >= W && lab[i - W] === -1 && cls[i - W] === c) { lab[i - W] = L; stack[sp++] = i - W; }
-      if (i < n - W && lab[i + W] === -1 && cls[i + W] === c) { lab[i + W] = L; stack[sp++] = i + W; }
-    }
-    areas.push(area);
-  }
-  return { lab, count: next, areas };
-}
-
 // Fold weak components into the neighbour they touch most. A component is weak when it is
 // tiny, an island enclosed by a single neighbour, or a long thin streak (texture, grain).
 function mergeSmall(lab, W, H, count, areas, opts) {
@@ -304,160 +391,140 @@ function mergeSmall(lab, W, H, count, areas, opts) {
   return { lab, count: m, areas: outAreas };
 }
 
-// ---- Interior pen lines: Canny edges on the smoothed image, linked into strokes ----
-function gaussianBlur(src, W, H, sigma) {
-  const r = Math.max(1, Math.ceil(sigma * 3));
-  const k = new Float32Array(2 * r + 1);
-  let s = 0;
-  for (let i = -r; i <= r; i++) { k[i + r] = Math.exp(-(i * i) / (2 * sigma * sigma)); s += k[i + r]; }
-  for (let i = 0; i < k.length; i++) k[i] /= s;
-  const tmp = new Float32Array(W * H), out = new Float32Array(W * H);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    let acc = 0;
-    for (let i = -r; i <= r; i++) { let xx = x + i; if (xx < 0) xx = 0; else if (xx >= W) xx = W - 1; acc += src[y * W + xx] * k[i + r]; }
-    tmp[y * W + x] = acc;
-  }
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    let acc = 0;
-    for (let i = -r; i <= r; i++) { let yy = y + i; if (yy < 0) yy = 0; else if (yy >= H) yy = H - 1; acc += tmp[yy * W + x] * k[i + r]; }
-    out[y * W + x] = acc;
-  }
-  return out;
-}
-
-function cannyEdges(gray, W, H, sigma, edgeFrac) {
+// Morphological closing of a binary mask: bridges gaps up to ~2r pixels wide.
+function morphClose(mask, W, H, r) {
   const n = W * H;
-  const b = gaussianBlur(gray, W, H, sigma);
-  const mag = new Float32Array(n), dir = new Uint8Array(n);
-  let maxMag = 0;
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-    const i = y * W + x;
-    const gx = -b[i - W - 1] - 2 * b[i - 1] - b[i + W - 1] + b[i - W + 1] + 2 * b[i + 1] + b[i + W + 1];
-    const gy = -b[i - W - 1] - 2 * b[i - W] - b[i - W + 1] + b[i + W - 1] + 2 * b[i + W] + b[i + W + 1];
-    const m = Math.sqrt(gx * gx + gy * gy);
-    mag[i] = m; if (m > maxMag) maxMag = m;
-    let a = Math.atan2(gy, gx) * (180 / Math.PI); if (a < 0) a += 180;
-    dir[i] = (a < 22.5 || a >= 157.5) ? 0 : (a < 67.5) ? 1 : (a < 112.5) ? 2 : 3;
-  }
-  const nms = new Float32Array(n);
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-    const i = y * W + x, m = mag[i];
-    if (m === 0) continue;
-    let n1, n2;
-    switch (dir[i]) {
-      case 0: n1 = mag[i - 1]; n2 = mag[i + 1]; break;
-      case 1: n1 = mag[i + W + 1]; n2 = mag[i - W - 1]; break;
-      case 2: n1 = mag[i - W]; n2 = mag[i + W]; break;
-      default: n1 = mag[i + W - 1]; n2 = mag[i - W + 1];
-    }
-    if (m >= n1 && m >= n2) nms[i] = m;
-  }
-  const BINS = 1024, hist = new Int32Array(BINS);
-  const scale = maxMag > 0 ? (BINS - 1) / maxMag : 0;
-  for (let i = 0; i < n; i++) if (nms[i] > 0) hist[(nms[i] * scale) | 0]++;
-  let acc = 0, bin = BINS - 1;
-  for (; bin > 0; bin--) { acc += hist[bin]; if (acc >= edgeFrac * n) break; }
-  const high = Math.max(bin / (scale || 1), 40), low = high * 0.45;
-  const edge = new Uint8Array(n), stack = new Int32Array(n);
-  let sp = 0;
-  for (let i = 0; i < n; i++) if (nms[i] >= high) { edge[i] = 1; stack[sp++] = i; }
-  while (sp > 0) {
-    const i = stack[--sp], x = i % W, y = (i - x) / W;
-    for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
-      for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= W) continue;
-        const j = yy * W + xx; if (!edge[j] && nms[j] >= low) { edge[j] = 1; stack[sp++] = j; } } }
-  }
-  return edge;
-}
-
-// Remove edge pixels that sit on (or within 2px of) a shape border — those lines are drawn already.
-function suppressNearBorders(edge, lab, W, H) {
-  const n = W * H, near = new Uint8Array(n);
-  for (let i = 0; i < n; i++) {
-    const x = i % W;
-    if ((x < W - 1 && lab[i] !== lab[i + 1]) || (i < n - W && lab[i] !== lab[i + W])) near[i] = 1;
-  }
-  const r = 2;
-  for (let i = 0; i < n; i++) {
-    if (!edge[i]) continue;
-    const x = i % W, y = (i - x) / W;
-    let hit = false;
-    for (let dy = -r; dy <= r && !hit; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue;
-      for (let dx = -r; dx <= r; dx++) { const xx = x + dx; if (xx < 0 || xx >= W) continue; if (near[yy * W + xx]) { hit = true; break; } } }
-    if (hit) edge[i] = 0;
-  }
-}
-
-// Link edge pixels into polylines (8-connected walks), drop short ones.
-function edgeChains(edge, W, H, minLen) {
-  const n = W * H;
-  const seen = new Uint8Array(n);
-  const chains = [];
-  const nb = [1, -1, W, -W, W + 1, W - 1, -W + 1, -W - 1];
-  const degree = (i) => {
-    const x = i % W; let d = 0;
-    for (let k = 0; k < 8; k++) {
-      const j = i + nb[k]; if (j < 0 || j >= n) continue;
-      const xj = j % W; if (Math.abs(xj - x) > 1) continue;
-      if (edge[j]) d++;
-    }
-    return d;
-  };
-  const walk = (start) => {
-    const pts = []; let cur = start;
-    while (cur !== -1) {
-      seen[cur] = 1; pts.push(cur % W + 0.5, ((cur / W) | 0) + 0.5);
-      const x = cur % W; let next = -1;
-      for (let k = 0; k < 8; k++) {
-        const j = cur + nb[k]; if (j < 0 || j >= n) continue;
-        if (Math.abs((j % W) - x) > 1) continue;
-        if (edge[j] && !seen[j]) { next = j; break; }
+  const run = (src, want) => {
+    let a = src;
+    for (let pass = 0; pass < r; pass++) {
+      const out = new Uint8Array(n);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        let hit = a[i] === want;
+        if (!hit) {
+          hit = (x > 0 && a[i - 1] === want) || (x < W - 1 && a[i + 1] === want) || (y > 0 && a[i - W] === want) || (y < H - 1 && a[i + W] === want) ||
+                (x > 0 && y > 0 && a[i - W - 1] === want) || (x < W - 1 && y > 0 && a[i - W + 1] === want) ||
+                (x > 0 && y < H - 1 && a[i + W - 1] === want) || (x < W - 1 && y < H - 1 && a[i + W + 1] === want);
+        }
+        out[i] = hit ? want : 1 - want;
       }
-      cur = next;
+      a = out;
     }
-    return pts;
+    return a;
   };
-  const collect = (pts) => { if (pts.length / 2 >= minLen) chains.push(pts); };
-  for (let i = 0; i < n; i++) if (edge[i] && !seen[i] && degree(i) <= 1) collect(walk(i));
-  for (let i = 0; i < n; i++) if (edge[i] && !seen[i]) collect(walk(i));
-  return chains;
+  return run(run(mask, 1), 0); // dilate ink, then erode it back
 }
 
-function simplifyOpen(pts, eps) {
-  const m = pts.length / 2;
-  const xs = new Array(m), ys = new Array(m);
-  for (let i = 0; i < m; i++) { xs[i] = pts[2 * i]; ys[i] = pts[2 * i + 1]; }
-  const keep = new Uint8Array(m); keep[0] = 1; keep[m - 1] = 1;
-  rdp(xs, ys, keep, 0, m - 1, eps);
-  const out = [];
-  for (let i = 0; i < m; i++) if (keep[i]) out.push(xs[i], ys[i]);
-  return out;
-}
-
-function chaikinOpen(pts) {
-  const n = pts.length / 2;
-  if (n < 3) return pts;
-  const out = [pts[0], pts[1]];
-  for (let i = 0; i < n - 1; i++) {
-    const x0 = pts[2 * i], y0 = pts[2 * i + 1], x1 = pts[2 * i + 2], y1 = pts[2 * i + 3];
-    out.push(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1, 0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1);
+// Hollow out thick ink: anything deeper than `depth` pixels inside a stroke becomes paper,
+// so a solid dark patch turns into an outlined shape you can color, like a coloring book.
+function hollowInk(ink, W, H, depth) {
+  const n = W * H;
+  let inside = ink;
+  for (let pass = 0; pass < depth; pass++) {
+    const out = new Uint8Array(n);
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (inside[i] && inside[i - 1] && inside[i + 1] && inside[i - W] && inside[i + W] &&
+          inside[i - W - 1] && inside[i - W + 1] && inside[i + W - 1] && inside[i + W + 1]) out[i] = 1;
+    }
+    inside = out;
   }
-  out.push(pts[2 * n - 2], pts[2 * n - 1]);
-  return out;
+  const res = new Uint8Array(n);
+  for (let i = 0; i < n; i++) res[i] = ink[i] && !inside[i] ? 1 : 0;
+  return res;
 }
 
-function chainsToPath(chains) {
-  let d = '';
-  for (const pts of chains) {
-    d += 'M' + fmt(pts[0]) + ' ' + fmt(pts[1]);
-    for (let i = 2; i < pts.length; i += 2) d += 'L' + fmt(pts[i]) + ' ' + fmt(pts[i + 1]);
+// Connected components of a label map (4-connected, equal values); returns labels and areas.
+function components(mask, W, H) {
+  const n = W * H;
+  const lab = new Int32Array(n).fill(-1);
+  const stack = new Int32Array(n);
+  const areas = [];
+  let next = 0;
+  for (let s = 0; s < n; s++) {
+    if (lab[s] !== -1) continue;
+    const L = next++, c = mask[s];
+    let sp = 0, area = 0;
+    stack[sp++] = s; lab[s] = L;
+    while (sp > 0) {
+      const i = stack[--sp]; area++;
+      const x = i % W;
+      if (x > 0 && lab[i - 1] === -1 && mask[i - 1] === c) { lab[i - 1] = L; stack[sp++] = i - 1; }
+      if (x < W - 1 && lab[i + 1] === -1 && mask[i + 1] === c) { lab[i + 1] = L; stack[sp++] = i + 1; }
+      if (i >= W && lab[i - W] === -1 && mask[i - W] === c) { lab[i - W] = L; stack[sp++] = i - W; }
+      if (i < n - W && lab[i + W] === -1 && mask[i + W] === c) { lab[i + W] = L; stack[sp++] = i + W; }
+    }
+    areas.push(area);
   }
-  return d;
+  return { lab, count: next, areas };
+}
+
+// Turn the line map into ink (label 0) and colorable spaces (labels 1..). `fence` is a
+// coarse color segmentation: spaces never cross a fence, so a subject stays separate from
+// its background even where the drawn outline has a gap.
+function spacesFromLines(lineMap, fence, W, H, threshold, closeR, minInk, minSpace) {
+  const n = W * H;
+  let ink = new Uint8Array(n);
+  for (let i = 0; i < n; i++) ink[i] = lineMap[i] < threshold ? 1 : 0;
+  ink = morphClose(ink, W, H, closeR);
+  ink = hollowInk(ink, W, H, 2);
+  // Drop ink specks.
+  let c = components(ink, W, H);
+  for (let i = 0; i < n; i++) if (ink[i] && c.areas[c.lab[i]] < minInk) ink[i] = 0;
+  // Spaces: connected paper pixels within one fence cell.
+  const key = new Int32Array(n);
+  for (let i = 0; i < n; i++) key[i] = ink[i] ? -1 : fence[i];
+  c = components(key, W, H);
+  const count = c.count;
+  const isInk = new Uint8Array(count);
+  for (let i = 0; i < n; i++) if (ink[i]) isInk[c.lab[i]] = 1;
+  // Fold small spaces into the neighbouring space they touch most (never into ink).
+  const parent = new Int32Array(count);
+  for (let i = 0; i < count; i++) parent[i] = i;
+  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const area = Float64Array.from(c.areas);
+  for (let pass = 0; pass < 3; pass++) {
+    const touch = new Map();
+    const bump = (a, b) => { const k = a * count + b; touch.set(k, (touch.get(k) || 0) + 1); };
+    for (let i = 0; i < n; i++) {
+      const a = find(c.lab[i]);
+      if (isInk[a]) continue;
+      const x = i % W;
+      if (x < W - 1) { const b = find(c.lab[i + 1]); if (a !== b && !isInk[b]) { if (area[a] < minSpace) bump(a, b); if (area[b] < minSpace) bump(b, a); } }
+      if (i < n - W) { const b = find(c.lab[i + W]); if (a !== b && !isInk[b]) { if (area[a] < minSpace) bump(a, b); if (area[b] < minSpace) bump(b, a); } }
+    }
+    const best = new Map();
+    for (const [k, cnt] of touch) {
+      const a = Math.floor(k / count), b = k - a * count;
+      const cur = best.get(a);
+      if (!cur || cnt > cur.cnt) best.set(a, { b, cnt });
+    }
+    if (!best.size) break;
+    let merged = 0;
+    for (const [a, { b }] of best) {
+      const ra = find(a), rb = find(b);
+      if (ra !== a || ra === rb || area[ra] >= minSpace) continue;
+      parent[ra] = rb; area[rb] += area[ra]; merged++;
+    }
+    if (!merged) break;
+  }
+  // Leftover tiny spaces with no paper neighbour become ink.
+  const lab = new Int32Array(n);
+  const remap = new Int32Array(count).fill(-1);
+  const areas = [0];
+  let m = 1;
+  for (let i = 0; i < n; i++) {
+    const r = find(c.lab[i]);
+    if (ink[i] || area[r] < minSpace) { lab[i] = 0; areas[0]++; continue; }
+    if (remap[r] === -1) { remap[r] = m++; areas.push(0); }
+    lab[i] = remap[r]; areas[lab[i]]++;
+  }
+  return { lab, count: m, areas };
 }
 
 // Trace every label's boundary as closed loops on the pixel grid,
 // then simplify. Returns an array (indexed by label) of loops (flat [x,y,...]).
-function traceLabels(lab, W, H, count) {
+function traceLabels(lab, W, H, count, eps) {
   const W1 = W + 1;
   const V = W1 * (H + 1);
   const edgeLists = new Array(count);
@@ -495,7 +562,7 @@ function traceLabels(lab, W, H, count) {
         nextA[cur] = nextB[cur]; nextB[cur] = -1;
         cur = nx;
       } while (cur !== start);
-      loops.push(chaikin(simplifyLoop(pts, 1.6), W, H));
+      loops.push(chaikin(simplifyLoop(pts, eps), W, H));
     }
     result[L] = loops;
   }
@@ -514,7 +581,6 @@ function simplifyLoop(flat, eps) {
   }
   const m = xs.length;
   if (m <= 4) { const out = []; for (let i = 0; i < m; i++) out.push(xs[i], ys[i]); return out; }
-  // Split the ring at the point farthest from point 0 so RDP sees two open chains.
   let far = 1, fd = -1;
   for (let i = 1; i < m; i++) { const d = (xs[i] - xs[0]) ** 2 + (ys[i] - ys[0]) ** 2; if (d > fd) { fd = d; far = i; } }
   const keep = new Uint8Array(m);
@@ -541,7 +607,6 @@ function rdp(xs, ys, keep, a, b, eps) {
     if (best !== -1) { keep[best] = 1; stack.push([i0, best], [best, i1]); }
   }
 }
-// Second chain runs from `far` back around to index 0 (index m ≡ 0).
 function rdpWrap(xs, ys, keep, far, m, eps) {
   const idx = [];
   for (let i = far; i <= m; i++) idx.push(i % m);
@@ -551,8 +616,7 @@ function rdpWrap(xs, ys, keep, far, m, eps) {
   for (let j = 1; j < idx.length - 1; j++) if (k[j]) keep[idx[j]] = 1;
 }
 
-// One round of Chaikin corner cutting: turns the polygon into a soft, hand-drawn line.
-// Points on the picture's edge stay put so the outer corners remain square.
+// One round of Chaikin corner cutting; points on the picture's edge stay put.
 function chaikin(pts, W, H) {
   const n = pts.length / 2;
   if (n < 4) return pts;
@@ -594,41 +658,68 @@ function traceImage(img, detailLevel) {
   const data = ctx.getImageData(0, 0, W, H).data;
   const n = W * H;
 
-  const smooth = bilateral(data, W, H, 4, 2.6, cfg.sigmaR, 3);
-  const lab = rgbToLab(smooth, n);
-  let cls = kmeansLabels(lab, n, cfg.K, 10);
-  cls = modeFilter(cls, W, H, cfg.K, 3);
+  const smooth = bilateral(data, W, H, 3, 2.0, cfg.sigmaR, cfg.smoothPasses);
+  let gray = new Float32Array(n);
+  for (let i = 0; i < n; i++) gray[i] = (0.299 * smooth[i * 3] + 0.587 * smooth[i * 3 + 1] + 0.114 * smooth[i * 3 + 2]) / 255;
+
+  // Stretch contrast so faded or dark photos give the same line strength as crisp ones.
+  {
+    const sorted = Float32Array.from(gray).sort();
+    const lo = sorted[Math.floor(n * 0.01)], hi = sorted[Math.floor(n * 0.99)];
+    const span = Math.max(0.05, hi - lo);
+    for (let i = 0; i < n; i++) gray[i] = Math.min(1, Math.max(0, (gray[i] - lo) / span));
+  }
+
+  const flow = edgeTangentFlow(gray, W, H, cfg.etfRadius, 3);
+  const dogParams = { sigmaC: cfg.sigmaC, sigmaM: cfg.sigmaM, rho: 0.985 };
+  let h = flowDoG(gray, W, H, flow, dogParams);
+  // Auto exposure: choose the cutoff that inks about `inkFrac` of the picture,
+  // but never draw responses weaker than a small floor (flat photos stay clean).
+  const cutoffFor = (resp) => {
+    const neg = [];
+    for (let i = 0; i < n; i++) if (resp[i] < 0) neg.push(resp[i]);
+    if (!neg.length) return -1;
+    neg.sort((a, b) => a - b);
+    const k = Math.min(neg.length - 1, Math.floor(cfg.inkFrac * n));
+    return Math.min(neg[k], -0.004);
+  };
+  let cutoff = cutoffFor(h);
+  for (let it = 1; it < cfg.passes; it++) {
+    // Superimpose the lines onto the picture and go again: strokes grow more coherent.
+    const phi = 0.55 / -cutoff;
+    const g2 = new Float32Array(n);
+    for (let i = 0; i < n; i++) g2[i] = Math.min(gray[i], h[i] < 0 ? 1 + Math.tanh(phi * h[i]) : 1);
+    h = flowDoG(g2, W, H, flow, dogParams);
+    cutoff = cutoffFor(h);
+  }
+  const lines = new Float32Array(n);
+  for (let i = 0; i < n; i++) lines[i] = h[i] < cutoff ? 0 : 1;
+
+  // Coarse color segmentation used only as invisible fences between spaces.
+  const labc = rgbToLab(smooth, n);
+  let cls = kmeansLabels(labc, n, cfg.K, 8);
+  cls = modeFilter(cls, W, H, cfg.K, 2);
   const comp = components(cls, W, H);
-  const { lab: labels, count, areas } = mergeSmall(comp.lab, W, H, comp.count, comp.areas, {
-    minArea: Math.max(40, cfg.minAreaFrac * n),
-    islandArea: cfg.islandFrac * n,
-    sliverArea: cfg.sliverFrac * n,
-    sliverRatio: cfg.sliverRatio,
-  });
-  const loops = traceLabels(labels, W, H, count);
+  const fence = mergeSmall(comp.lab, W, H, comp.count, comp.areas, {
+    minArea: 0.01 * n, islandArea: 0.03 * n, sliverArea: 0.03 * n, sliverRatio: 6,
+  }).lab;
 
-  // Interior detail lines from the smoothed photo's luminance.
-  const gray = new Float32Array(n);
-  for (let i = 0; i < n; i++) gray[i] = 0.299 * smooth[i * 3] + 0.587 * smooth[i * 3 + 1] + 0.114 * smooth[i * 3 + 2];
-  const edge = cannyEdges(gray, W, H, 1.2, cfg.edgeFrac);
-  suppressNearBorders(edge, labels, W, H);
-  const chains = edgeChains(edge, W, H, cfg.minChain).map((c) => chaikinOpen(simplifyOpen(c, 1.4)));
+  const { lab, count, areas } = spacesFromLines(lines, fence, W, H, 0.5, cfg.closeR, cfg.minInk, cfg.minSpace);
+  const loops = traceLabels(lab, W, H, count, 1.2);
 
-  const k = Math.max(0.7, Math.max(W, H) / 640);
-  const lw = fmt(LINE_WIDTH * k), dw = fmt(DETAIL_WIDTH * k);
   const parts = [];
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
   parts.push(`<rect width="${W}" height="${H}" fill="#fff"/>`);
-  parts.push(`<g id="regions" fill-rule="evenodd" stroke="${INK}" stroke-width="${lw}" stroke-linejoin="round" stroke-linecap="round">`);
-  for (let L = 0; L < count; L++) {
+  parts.push('<g id="regions" fill-rule="evenodd" stroke-width="2" stroke-linejoin="round">');
+  for (let L = 1; L < count; L++) {
     const d = loopsToPath(loops[L]);
     if (!d) continue;
-    parts.push(`<path data-id="${L}" data-area="${areas[L]}" d="${d}" fill="${BLANK}"/>`);
+    parts.push(`<path data-id="${L}" data-area="${areas[L]}" d="${d}" fill="${BLANK}" stroke="${BLANK}"/>`);
   }
   parts.push('</g>');
-  parts.push(`<path id="lines" d="${chainsToPath(chains)}" fill="none" stroke="${INK}" stroke-width="${dw}" stroke-linejoin="round" stroke-linecap="round" pointer-events="none"/>`);
+  parts.push(`<path id="ink" d="${loopsToPath(loops[0])}" fill="${INK}" fill-rule="evenodd" pointer-events="none"/>`);
   parts.push('</svg>');
-  return { svgText: parts.join(''), W, H, regionCount: count };
+  return { svgText: parts.join(''), W, H, regionCount: count - 1 };
 }
 
 // ---------------------------------------------------------------------------
@@ -719,6 +810,7 @@ function fillRegion(path) {
   if (prev === hex) { playColor(color, +path.dataset.area / (state.W * state.H)); return; }
   state.undo.push([{ el: path, prev }]);
   path.setAttribute('fill', hex);
+  path.setAttribute('stroke', hex);
   playColor(color, +path.dataset.area / (state.W * state.H));
   if (navigator.vibrate) navigator.vibrate(8);
   color.button.classList.remove('ping'); void color.button.offsetWidth; color.button.classList.add('ping');
@@ -727,14 +819,14 @@ function fillRegion(path) {
 function undo() {
   const entry = state.undo.pop();
   if (!entry) return;
-  for (const { el: p, prev } of entry) p.setAttribute('fill', prev);
+  for (const { el: p, prev } of entry) { p.setAttribute('fill', prev); p.setAttribute('stroke', prev); }
   updateButtons();
 }
 function clearAll() {
   const entry = [];
   for (const { el: p } of state.regions) {
     const prev = p.getAttribute('fill');
-    if (prev !== BLANK) { entry.push({ el: p, prev }); p.setAttribute('fill', BLANK); }
+    if (prev !== BLANK) { entry.push({ el: p, prev }); p.setAttribute('fill', BLANK); p.setAttribute('stroke', BLANK); }
   }
   if (entry.length) state.undo.push(entry);
   updateButtons();
