@@ -4,25 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Blue Hollow</title>
+<meta name="asset-base" content="../">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,400;0,500;0,700;0,800;1,700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;700;800&display=swap">
 <style>
   :root {
     color-scheme: light;
-    --paper: #f2e6cf;
-    --paper-2: #e8d8b9;
-    --ink: #1f2a2e;
-    --teal: #2f7f7a;
-    --deep: #1c4a4f;
-    --mustard: #e0a526;
-    --tomato: #d9572b;
-    --pink: #e8a3a0;
-    --cut: 4px 5px 0 rgba(20, 34, 36, 0.38);
-    --font: "Jost", "Futura", "Century Gothic", "Avenir Next", system-ui, sans-serif;
+    --paper: #faf4ef;
+    --paper-2: #f0dfe3;
+    --ink: #1d1d1b;
+    --teal: #0f7160;
+    --deep: #0f7160;
+    --mustard: #d9c227;
+    --tomato: #ef7426;
+    --pink: #eaa8cb;
+    --cut: 4px 5px 0 rgba(15, 60, 58, 0.35);
+    --font: "Karla", "Helvetica Neue", Arial, system-ui, sans-serif;
   }
   [hidden] { display: none !important; }
-  html, body { height: 100%; margin: 0; background: var(--deep); color: var(--ink); overflow: hidden; }
+  html, body { height: 100%; margin: 0; background: #8ecfd3; color: var(--ink); overflow: hidden; }
   body { font-family: var(--font); -webkit-user-select: none; user-select: none; touch-action: none; }
   #game { position: fixed; inset: 0; }
   #game canvas { display: block; width: 100%; height: 100%; }
@@ -64,11 +65,11 @@
   #crosshair { left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--paper); opacity: 0.8; }
 
   /* Screens */
-  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(28, 74, 79, 0.55); }
+  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(15, 113, 96, 0.35); }
   .panel { position: relative; width: min(480px, 100%); display: grid; gap: 18px; padding: 34px 30px 30px;
     background: var(--paper); border-radius: 22px 22px 22px 6px; box-shadow: 8px 10px 0 rgba(20, 34, 36, 0.45); box-sizing: border-box; }
   .panel::before { content: ""; position: absolute; top: -34px; right: 34px; width: 92px; height: 92px; border-radius: 50%;
-    background: var(--mustard); box-shadow: var(--cut); z-index: -1; }
+    background: var(--tomato); box-shadow: var(--cut); z-index: -1; }
   .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; color: var(--tomato); margin: 0; }
   h1 { font-weight: 800; font-size: clamp(52px, 13vw, 88px); line-height: 0.86; margin: 0; color: var(--deep);
     letter-spacing: -0.03em; text-wrap: balance; text-shadow: 4px 4px 0 var(--pink); }
@@ -112,10 +113,10 @@
   <div id="sonar" class="hud card">
     <span class="k">Sonar</span>
     <svg viewBox="-30 -30 60 60" aria-hidden="true">
-      <circle r="27" fill="#2f7f7a"/>
-      <circle r="17" fill="#1c4a4f"/>
-      <circle r="6" fill="#2f7f7a"/>
-      <g id="sonarArrow"><path d="M0,-25 L9,-5 L0,-10 L-9,-5 Z" fill="#e0a526"/></g>
+      <circle r="27" fill="#0f7160"/>
+      <circle r="17" fill="#eaa8cb"/>
+      <circle r="6" fill="#0f7160"/>
+      <g id="sonarArrow"><path d="M0,-25 L9,-5 L0,-10 L-9,-5 Z" fill="#ef7426"/></g>
     </svg>
     <span id="sonarDist">--</span>
   </div>
@@ -136,7 +137,7 @@
 
 <div id="startScreen" class="screen">
   <div class="panel">
-    <p class="eyebrow">A lagoon dive · 20 pearls</p>
+    <p class="eyebrow">Shape land · 20 pearls</p>
     <h1>Blue Hollow</h1>
     <p>Clams on the floor of the hollow are holding pearls, each marked by a sparkle. Collect them all before your tank runs dry. Surface to breathe, and give the jellyfish room.</p>
     <dl class="keys" id="keyList">

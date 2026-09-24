@@ -1,6 +1,6 @@
 # Blue Hollow
 
-A first-person underwater dive in a mid-century paper-cutout style, built with three.js (loaded from a CDN, no build step).
+A first-person underwater dive in a flat "shape land" cut-paper style, built with three.js (loaded from a CDN, no build step).
 
 Open `index.html` through any local web server, for example:
 
@@ -15,6 +15,11 @@ Surface to refill your tank, each pearl adds 10% O₂, and jellyfish stings cost
 - Mouse: look (click to lock the pointer, Esc to pause)
 - W A S D: swim · Space / C: rise / sink · Shift: kick harder (uses more air) · F: dive torch
 - Touch: left thumb swims, right thumb looks, Up / Dive buttons
+
+## Art
+Every plant and creature is a flat cut-paper shape standing in 3D space. The flowers, sun, triangle,
+semicircle, macaroni and noodle come straight from `../shapes-1/` and `../new/`; the rest (fish,
+jellyfish, clams, rocks, kelp) are drawn in the same style into a texture atlas at startup.
 
 ## What's in the scene
 - Procedural seabed (reef in the middle, winding trench, basin walls) with animated caustics
