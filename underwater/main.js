@@ -282,6 +282,8 @@ const HOUSE = (() => {
     { to: 'shapes', shape: 'rect', x: 1693, y: 1158, w: 84, h: 190, exit: { x: 1640, y: 1280 } },
     { to: 'dune', shape: 'rect', x: 2228, y: 1502, w: 84, h: 170, exit: { x: 2150, y: 1600 } },
     { to: 'clock', shape: 'circle', x: 1020, y: 858, r: 24, exit: { x: 930, y: 930 } },
+    { to: 'sky', shape: 'rect', x: 862, y: 752, w: 76, h: 96, exit: { x: 880, y: 910 } },
+    { to: 'fridge', shape: 'rect', x: 1586, y: 862, w: 68, h: 158, exit: { x: 1520, y: 950 } },
   ];
 
   function fishDraw(x, y, kind, face, flick) {
@@ -472,7 +474,7 @@ const HOUSE = (() => {
   return {
     id: 'house', name: 'The House', swatch: ['#bcd2e8', '#efdcd2', '#e2552d'], bg: P.sky, viewH: 760,
     x0: 0, y0: 0, x1: W, y1: H, hw: 30, hh: 12, spawn: { x: 520, y: WL + 20 }, portals,
-    hint: 'You are a diver. Swim with the arrows. The glowing window, painting, wardrobe, clock and door lead elsewhere.',
+    hint: 'You are a diver. Swim with the arrows. Anything glowing (a window, the fridge, a painting, the clock) leads elsewhere.',
     hits,
     move(p, inp, dt) { floatMove(this, p, inp, dt); },
     update(dt, t, frame, p) {
@@ -562,6 +564,7 @@ const NIGHT = (() => {
     { to: 'house', shape: 'circle', x: 520, y: 1400, r: 50, exit: { x: 660, y: 1400 }, frame: true },
     { to: 'orbit', shape: 'circle', x: 2600, y: 760, r: 70, exit: { x: 2600, y: 920 }, galaxy: true },
     { to: 'mirror', shape: 'rect', x: 3500, y: 1640, w: 110, h: 170, exit: { x: 3420, y: 1900 }, mirror: true },
+    { to: 'sky', shape: 'rect', x: 1500, y: 2360, w: 170, h: 120, exit: { x: 1585, y: 2240 } },
   ];
   return {
     id: 'night', name: 'The Night Sky', swatch: ['#1b2456', '#2d3a7a', '#f4e9b8'], bg: P.bands[0], viewH: 760,
@@ -1206,8 +1209,235 @@ const MIRROR = (() => {
   };
 })();
 
-const WORLDS = { house: HOUSE, night: NIGHT, dune: DUNE, stand: STAND, clock: CLOCK, shapes: SHAPES, orbit: ORBIT, mirror: MIRROR };
-const WORLD_ORDER = ['house', 'night', 'dune', 'stand', 'clock', 'shapes', 'orbit', 'mirror'];
+// =====================================================================
+// 9. The Sky: a small bird. ↑ flaps, ← → steer, let go to glide, ↓ dives.
+//    Columns of warm air lift you.
+// =====================================================================
+const SKY = (() => {
+  const W = 7000, H = 3200, GROUND = 3000;
+  const P = { bands: ['#8fb9e2', '#a0c4e7', '#b2cfeb', '#c6dcef', '#e6dde0', '#f3d2bd'], roof: ['#7d8fa6', '#6b7c93', '#8a9bb0', '#5f6f86'], sun: '#fff1c1', red: '#e2552d', yellow: '#e8c547', cream: '#f4efe3' };
+  const cloudTex = stipple('#ffffff', ['#eef3f8', '#dfe8f1', '#ffffff', '#f7f7f7'], 900, 96, 0.5, 1.4, 61);
+  const mkCloud = (x, y, s) => ({ x, y, parts: Array.from({ length: 6 }, (_, k) => ({ dx: (k - 2.5) * 70 * s + rr(-20, 20), dy: rr(-30, 20) * s, rx: rr(70, 120) * s, ry: rr(36, 60) * s })) });
+  const backClouds = Array.from({ length: 22 }, () => mkCloud(rr(0, W), rr(300, 2600), rr(0.8, 1.6)));
+  const frontClouds = Array.from({ length: 7 }, () => mkCloud(rr(0, W), rr(500, 2500), rr(1.2, 2)));
+  const thermals = [900, 2100, 3300, 4600, 5800].map((x) => ({ x, w: 240 }));
+  const flocks = Array.from({ length: 4 }, (_, i) => ({ x: rr(0, W), y: rr(400, 2200), v: rr(60, 120) * (i % 2 ? 1 : -1), n: 5 + i * 2 }));
+  const houses = []; for (let x = -100; x < W + 200; x += rr(160, 280)) houses.push({ x, w: rr(120, 240), h: rr(90, 220), c: pick(P.roof), roof: pick(['gable', 'flat', 'dome']) });
+  const kites = [1500, 3900, 5200].map((x, i) => ({ x, y: rr(1700, 2200), c: [P.red, P.yellow, '#2e62b0'][i] }));
+  const balloon = { x: 2800, y: 1300 };
+  const portals = [
+    { to: 'house', shape: 'rect', x: 560, y: 1440, w: 110, h: 140, exit: { x: 780, y: 1510 } },
+    { to: 'night', shape: 'circle', x: 3500, y: 300, r: 95, exit: { x: 3500, y: 540 } },
+    { to: 'dune', shape: 'rect', x: 6360, y: GROUND - 130, w: 76, h: 130, exit: { x: 6200, y: GROUND - 140 } },
+  ];
+  const drawCloud = (c) => { ctx.fillStyle = cloudTex; ctx.beginPath(); for (const q of c.parts) { ctx.moveTo(c.x + q.dx + q.rx, c.y + q.dy); ctx.ellipse(c.x + q.dx, c.y + q.dy, q.rx, q.ry, 0, 0, 7); } ctx.fill(); };
+  const inThermal = (x) => thermals.some((th) => Math.abs(x - th.x) < th.w / 2);
+  return {
+    id: 'sky', name: 'The Sky', swatch: ['#a0c4e7', '#ffffff', '#e2552d'], bg: P.bands[0], viewH: 1000,
+    x0: 0, y0: 0, x1: W, y1: H, spawn: { x: 780, y: 1510 }, portals,
+    hint: 'You are a bird. ↑ flaps, ← → steer, let go to glide, ↓ dives. Warm air lifts you.',
+    place(p, spot) { p.x = spot.x; p.y = spot.y; p.vx = 60; p.vy = 0; p.s.flapT = 0; p.s.wing = 0; },
+    move(p, inp, dt) {
+      const s = p.s;
+      let ix = inp.ix, up = inp.upPressed || (inp.iy < 0 && s.flapT <= 0), dive = inp.iy > 0;
+      if (p.target) {
+        const dx = p.target.x - p.x, dy = p.target.y - p.y;
+        if (Math.hypot(dx, dy) < 40) p.target = null;
+        else { ix = Math.sign(dx) * (Math.abs(dx) > 20 ? 1 : 0); up = up || (dy < -20 && s.flapT <= 0 && p.vy > -120); dive = dy > 200; }
+      }
+      s.flapT -= dt; s.wing = Math.max(0, s.wing - dt);
+      if (up) { p.vy = Math.min(p.vy, 60) - 430; p.vx += p.face * 90; s.flapT = 0.26; s.wing = 0.22; s.perched = false; }
+      if (ix) { p.face = ix; p.vx += ix * 520 * dt; }
+      p.vx *= Math.exp(-0.5 * dt);
+      p.vx = clamp(p.vx, -560, 560);
+      p.vy += (dive ? 1500 : 760) * dt;
+      if (inThermal(p.x) && !dive) p.vy = Math.max(p.vy - 1100 * dt, -260);   // rising warm air carries you up, gently
+      p.vy = clamp(p.vy, -560, dive ? 950 : (s.wing > 0 ? 400 : 190));       // outstretched wings keep the fall slow
+      p.x = clamp(p.x + p.vx * dt, 30, W - 30);
+      p.y = clamp(p.y + p.vy * dt, 40, GROUND - 16);
+      if (p.y <= 40) p.vy = Math.max(p.vy, 0);
+      if (p.y >= GROUND - 16) { p.vy = 0; p.vx *= Math.exp(-6 * dt); s.perched = true; }
+    },
+    update(dt) {
+      for (const f of flocks) { f.x += f.v * dt; if (f.x > W + 300) f.x = -300; if (f.x < -300) f.x = W + 300; }
+      balloon.x += 14 * dt; balloon.y = 1300 + Math.sin(balloon.x * 0.004) * 80; if (balloon.x > W - 200) balloon.x = 400;
+    },
+    draw(t, frame, st, p) {
+      const bh = GROUND / P.bands.length;
+      P.bands.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(view.x - 20, i === 0 ? -2000 : i * bh, view.w + 40, i === P.bands.length - 1 ? 4000 : bh + (i === 0 ? 2000 : 0)); });
+      circle(par(4200, 0.15), 900 + view.y * 0.8, 160, P.sun, false);
+      for (const c of backClouds) if (visible(c.x, 400)) drawCloud(c);
+      // thermals: wavy lines climbing in flip-book steps
+      ink(2, 'rgba(255, 255, 255, 0.55)');
+      for (const th of thermals) {
+        if (!visible(th.x, 200)) continue;
+        for (let k = -2; k <= 2; k++) {
+          const x = th.x + k * 44, ph = (frame % 4) * 30;
+          ctx.beginPath(); for (let y = GROUND; y > GROUND - 2600; y -= 20) ctx.lineTo(x + Math.sin((y + ph) * 0.03 + k) * 8, y - ((frame % 4) * 10)); ctx.stroke();
+        }
+      }
+      // a striped hot-air balloon
+      const bx = balloon.x, by = balloon.y;
+      ctx.save(); ctx.beginPath(); ctx.ellipse(bx, by, 90, 110, 0, 0, 7); ctx.clip();
+      for (let k = -4; k <= 4; k++) { ctx.fillStyle = k % 2 ? P.red : P.cream; ctx.fillRect(bx + k * 22 - 11, by - 120, 22, 240); }
+      ctx.restore();
+      ink(1.5); ctx.beginPath(); ctx.moveTo(bx - 50, by + 90); ctx.lineTo(bx - 20, by + 170); ctx.moveTo(bx + 50, by + 90); ctx.lineTo(bx + 20, by + 170); ctx.stroke();
+      box(bx - 24, by + 170, 48, 32, '#a67a55', 1.5);
+      // flocks in V formation, wings flicking
+      for (const f of flocks) {
+        if (!visible(f.x, 300)) continue;
+        ink(3, '#2a2a2a');
+        for (let i = 0; i < f.n; i++) {
+          const row = Math.ceil(i / 2), side = i % 2 ? 1 : -1;
+          const x = f.x - Math.sign(f.v) * row * 34, y = f.y + side * row * 24, w = (frame + i) % 2 ? 8 : -2;
+          ctx.beginPath(); ctx.moveTo(x - 12, y - w); ctx.lineTo(x, y); ctx.lineTo(x + 12, y - w); ctx.stroke();
+        }
+      }
+      // kites on long strings from the rooftops
+      for (const k of kites) {
+        if (!visible(k.x, 300)) continue;
+        const sway = (frame % 4 < 2 ? -10 : 10);
+        ink(1, '#3b3b3b'); ctx.beginPath(); ctx.moveTo(k.x + 200, GROUND - 60); ctx.quadraticCurveTo(k.x + 120, k.y + 300, k.x + sway, k.y + 60); ctx.stroke();
+        poly([[k.x + sway, k.y], [k.x + 40 + sway, k.y + 50], [k.x + sway, k.y + 120], [k.x - 40 + sway, k.y + 50]], k.c);
+        ink(2, k.c); ctx.beginPath(); ctx.moveTo(k.x + sway, k.y + 120); for (let i = 1; i < 6; i++) ctx.lineTo(k.x + sway + (i % 2 ? 14 : -14), k.y + 120 + i * 24); ctx.stroke();
+      }
+      // the town far below
+      for (const h of houses) {
+        if (!visible(h.x, 300)) continue;
+        ctx.fillStyle = h.c; ctx.fillRect(h.x, GROUND - h.h, h.w, h.h + 400);
+        if (h.roof === 'gable') poly([[h.x - 8, GROUND - h.h], [h.x + h.w / 2, GROUND - h.h - 60], [h.x + h.w + 8, GROUND - h.h]], '#56647a');
+        else if (h.roof === 'dome') { ctx.fillStyle = '#56647a'; ctx.beginPath(); ctx.arc(h.x + h.w / 2, GROUND - h.h, h.w / 3, Math.PI, 0); ctx.fill(); }
+        ctx.fillStyle = '#e8c547';
+        for (let wy = GROUND - h.h + 24; wy < GROUND - 20; wy += 40) for (let wx = h.x + 18; wx < h.x + h.w - 20; wx += 36) if ((wx * 7 + wy) % 5 < 2) ctx.fillRect(wx, wy, 14, 18);
+      }
+      ctx.fillStyle = '#4d5b70'; ctx.fillRect(view.x - 20, GROUND, view.w + 40, 400);
+      // portal dressing: a floating window frame, a hole into the night, a door on a rooftop
+      const hw = portals[0]; box(hw.x - 12, hw.y - 12, hw.w + 24, hw.h + 24, '#d6a39b', 1.5);
+      const rd = portals[2]; ctx.fillStyle = '#c9332a'; ctx.fillRect(rd.x - 10, rd.y - 10, rd.w + 20, rd.h + 10);
+      for (const q of portals) drawPortal(q, frame, { labelAbove: q.to === 'dune', lineColor: INK });
+    },
+    overlay() { for (const c of frontClouds) if (visible(c.x, 400)) { ctx.globalAlpha = 0.85; drawCloud(c); ctx.globalAlpha = 1; } },
+    avatar(p, frame) {
+      const s = p.s, flap = s.wing > 0, perched = s.perched;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.scale(p.face * 1.4, 1.4);
+      ctx.rotate(perched ? 0 : clamp(p.vy / 1400, -0.35, 0.5));
+      poly([[-18, -2], [-34, -10], [-32, 6]], '#1f4a8a');                 // tail
+      ctx.fillStyle = '#2e62b0'; ctx.beginPath(); ctx.ellipse(0, 0, 20, 13, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#f4efe3'; ctx.beginPath(); ctx.ellipse(3, 5, 12, 7, 0, 0, 7); ctx.fill();
+      circle(16, -8, 9, '#2e62b0', false);
+      poly([[23, -9], [34, -6], [23, -3]], '#ef7426');
+      circle(18, -10, 3, '#ffffff', false); circle(19, -10, 1.6, INK, false);
+      // wings: up on a flap, spread when gliding, folded when perched
+      const up = flap ? (frame % 2 ? -34 : -26) : perched ? -2 : -10;
+      poly([[-6, -4], [10, -4], [-2 + (flap ? 6 : 0), up]], '#1f4a8a');
+      if (perched) { ink(2); ctx.beginPath(); ctx.moveTo(-2, 12); ctx.lineTo(-4, 18); ctx.moveTo(6, 12); ctx.lineTo(6, 18); ctx.stroke(); }
+      ctx.restore();
+    },
+  };
+})();
+
+// =====================================================================
+// 10. The Fridge: a pea that never stops bouncing. ← → nudge, ↑ bounces big.
+// =====================================================================
+const FRIDGE = (() => {
+  const W = 1400, H = 2400, L = 100, R = 1300, TOP = 100, FLOOR = 2300, PEA = 20;
+  const P = { wall: '#e7f1f0', rib: '#d5e5e4', glass: 'rgba(170, 214, 228, 0.55)', edge: '#8fbccb', light: '#fff3b0', red: '#e2552d', yellow: '#e8c547', green: '#2f8f4e', blue: '#2e62b0', cream: '#f4efe3' };
+  const SHELVES = [520, 900, 1280, 1660, 2040].map((y, i) => ({ y, gap: i % 2 ? [L, L + 230] : [R - 230, R] }));
+  const solids = [];
+  for (const s of SHELVES) { if (s.gap[0] > L) solids.push({ x: L, y: s.y, w: s.gap[0] - L, h: 16 }); if (s.gap[1] < R) solids.push({ x: s.gap[1], y: s.y, w: R - s.gap[1], h: 16 }); }
+  const hit = (x, y) => x - PEA < L || x + PEA > R || y - PEA < TOP || y + PEA > FLOOR || solids.some((b) => x + PEA > b.x && x - PEA < b.x + b.w && y + PEA > b.y && y - PEA < b.y + b.h);
+  const motes = Array.from({ length: 60 }, () => ({ x: rr(L, R), y: rr(TOP, FLOOR), v: rr(8, 22) }));
+  const portals = [
+    { to: 'house', shape: 'circle', x: 700, y: 200, r: 64, exit: { x: 700, y: 360 } },
+    { to: 'shapes', shape: 'tri', x: 900, y: 900 - 130, w: 170, h: 130, exit: { x: 760, y: 820 } },
+    { to: 'mirror', shape: 'rect', x: 420, y: 1660 - 120, w: 150, h: 120, exit: { x: 640, y: 1600 } },
+    { to: 'clock', shape: 'circle', x: 1000, y: 2040 - 50, r: 44, exit: { x: 840, y: 1990 } },
+  ];
+  return {
+    id: 'fridge', name: 'The Fridge', swatch: ['#e7f1f0', '#aad6e4', '#e8c547'], bg: P.wall, viewH: 900,
+    x0: 0, y0: 0, x1: W, y1: H, spawn: { x: 700, y: 360 }, portals,
+    hint: 'You are a pea. You never stop bouncing. ← → nudge, ↑ bounces big. The light goes home.',
+    place(p, spot) { p.x = spot.x; p.y = spot.y; p.vx = 0; p.vy = 0; p.s.squash = 0; },
+    move(p, inp, dt) {
+      const s = p.s;
+      let ix = inp.ix, big = inp.upPressed || inp.iy < 0;
+      if (p.target) { const dx = p.target.x - p.x; if (Math.abs(dx) < 30 && Math.abs(p.target.y - p.y) < 120) p.target = null; else { ix = Math.sign(dx) * (Math.abs(dx) > 20 ? 1 : 0); big = big || p.target.y < p.y - 150; } }
+      p.vx += ix * 1100 * dt; p.vx *= Math.exp(-1.2 * dt); p.vx = clamp(p.vx, -620, 620);
+      p.vy += 1500 * dt;
+      const nx = p.x + p.vx * dt;
+      if (hit(nx, p.y)) { p.vx = -p.vx * 0.6; } else p.x = nx;
+      const ny = p.y + p.vy * dt;
+      if (hit(p.x, ny)) {
+        if (p.vy > 0) {   // landed: bounce, and never quite stop
+          p.vy = -Math.max(Math.abs(p.vy) * 0.74, big ? 1050 : 380);
+          s.squash = 0.1;
+        } else p.vy = -p.vy * 0.4;
+      } else p.y = ny;
+      s.squash = Math.max(0, (s.squash || 0) - dt);
+      if (Math.abs(p.vx) > 20) p.face = Math.sign(p.vx);
+    },
+    update(dt) { for (const m of motes) { m.y += m.v * dt; if (m.y > FLOOR) m.y = TOP; } },
+    draw(t, frame) {
+      // the fridge body, then the inside: ribbed plastic walls, a glowing bulb, glass shelves
+      ctx.fillStyle = '#d9d6cf'; ctx.fillRect(view.x - 20, view.y - 20, view.w + 40, view.h + 40);
+      ctx.fillStyle = P.wall; ctx.fillRect(L, TOP, R - L, FLOOR - TOP);
+      ctx.fillStyle = P.rib; for (let y = TOP + 30; y < FLOOR; y += 46) ctx.fillRect(L, y, R - L, 6);
+      ctx.fillStyle = 'rgba(255, 243, 176, 0.35)'; ctx.beginPath(); ctx.moveTo(700, 200); ctx.lineTo(L, 900); ctx.lineTo(R, 900); ctx.closePath(); ctx.fill();
+      // shelf contents
+      const on = (y) => y;
+      // shelf 1 (y 520): milk, a jar of pickles, a row of bottles
+      let y = on(520);
+      box(260, y - 180, 90, 180, P.cream, 1.6); poly([[260, y - 180], [305, y - 220], [350, y - 180]], P.cream); ink(1.6); ctx.stroke(); ctx.fillStyle = P.blue; ctx.fillRect(260, y - 120, 90, 30);
+      ctx.fillStyle = 'rgba(160, 200, 120, 0.8)'; ctx.fillRect(400, y - 130, 90, 130); box(398, y - 146, 94, 18, P.red, 1.4);
+      ctx.fillStyle = '#5f8a3a'; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.ellipse(420 + (i % 3) * 25, y - 30 - i * 20, 9, 18, 0.3, 0, 7); ctx.fill(); }
+      for (let i = 0; i < 4; i++) { const x = 560 + i * 60; ctx.fillStyle = [P.green, P.red, P.yellow, P.blue][i]; ctx.fillRect(x, y - 150, 36, 150); ctx.fillRect(x + 10, y - 190, 16, 44); }
+      // shelf 2 (y 900): eggs in a carton, a lemon, the cheese wedge doorway
+      y = on(900);
+      ctx.fillStyle = '#c9b89a'; ctx.fillRect(200, y - 40, 340, 40);
+      for (let i = 0; i < 6; i++) { ctx.fillStyle = '#fbf4e6'; ctx.beginPath(); ctx.ellipse(230 + i * 55, y - 58, 22, 30, 0, 0, 7); ctx.fill(); ink(1.2); ctx.stroke(); }
+      circle(640, y - 40, 40, P.yellow, true, 1.4);
+      poly([[880, y], [1090, y], [1090, y - 150]], '#f2c230');
+      // shelf 3 (y 1280): a cake with a slice missing, butter
+      y = on(1280);
+      ctx.fillStyle = '#f2b9c6'; ctx.fillRect(300, y - 120, 260, 120); ctx.fillStyle = P.cream; ctx.fillRect(300, y - 132, 260, 16);
+      ctx.fillStyle = P.wall; poly([[430, y - 132], [560, y - 132], [560, y]], P.wall);
+      for (let i = 0; i < 5; i++) circle(320 + i * 24, y - 140, 8, P.red, false);
+      box(760, y - 50, 150, 50, '#fff0a6', 1.4);
+      // shelf 4 (y 1660): the wobbly jelly doorway, a bowl of cherries
+      y = on(1660);
+      ctx.fillStyle = '#c9e3ec'; ctx.beginPath(); ctx.ellipse(1000, y - 34, 110, 34, 0, 0, Math.PI); ctx.fill(); ink(1.4); ctx.stroke();
+      for (let i = 0; i < 7; i++) circle(930 + i * 22, y - 50 - (i % 2) * 14, 13, '#b8162b', false);
+      // shelf 5 (y 2040): the egg doorway sits in a cup; a stack of cheese slices
+      y = on(2040);
+      ctx.fillStyle = P.blue; ctx.fillRect(956, y - 30, 88, 30);
+      for (let i = 0; i < 6; i++) { ctx.fillStyle = i % 2 ? '#f2c230' : '#e8b53a'; ctx.fillRect(300, y - 12 - i * 12, 160, 12); }
+      // crisper drawers at the bottom
+      for (const [x0, x1] of [[L + 20, 680], [720, R - 20]]) { ctx.fillStyle = 'rgba(170, 214, 228, 0.45)'; ctx.fillRect(x0, 2100, x1 - x0, 190); ink(2, P.edge); ctx.strokeRect(x0, 2100, x1 - x0, 190); for (let i = 0; i < 5; i++) circle(x0 + 60 + i * 100, 2240 - (i % 2) * 30, 36, i % 2 ? '#2f8f4e' : '#e2552d', false); }
+      // glass shelves over everything they hold up
+      for (const b of solids) { ctx.fillStyle = P.glass; ctx.fillRect(b.x, b.y, b.w, b.h); ink(2, P.edge); ctx.strokeRect(b.x, b.y, b.w, b.h); }
+      for (const q of portals) {
+        if (q.to === 'mirror') { ctx.save(); const wob = frame % 2 ? 6 : -6; ctx.translate(q.x + q.w / 2, q.y + q.h); ctx.transform(1, 0, wob / 100, 1, 0, 0); ctx.translate(-(q.x + q.w / 2), -(q.y + q.h)); drawPortal(q, frame, { lineColor: '#b8162b', labelAbove: true }); ctx.restore(); }
+        else drawPortal(q, frame, { lineColor: q.to === 'house' ? '#e8c547' : INK, labelAbove: q.to !== 'house' });
+      }
+      ink(6, '#d9d6cf'); ctx.beginPath(); ctx.arc(700, 200, 70, 0, 7); ctx.stroke();
+      // frost: tiny motes drifting down, and rime along the walls
+      ctx.fillStyle = '#ffffff'; for (const m of motes) ctx.fillRect(m.x, m.y, 4, 4);
+      ctx.fillStyle = '#ffffff'; for (let yy = TOP; yy < FLOOR; yy += 34) { ctx.fillRect(L, yy, 10 + (yy % 3) * 6, 12); ctx.fillRect(R - 10 - (yy % 4) * 5, yy + 12, 10 + (yy % 4) * 5, 12); }
+    },
+    avatar(p) {
+      const sq = p.s.squash > 0 ? 0.7 : 1, st = p.s.squash > 0 ? 1.25 : 1;
+      ctx.save(); ctx.translate(p.x, p.y + (1 - sq) * PEA); ctx.scale(st, sq);
+      circle(0, 0, PEA, '#7cc04a', true, 1.6);
+      circle(-7, -7, 5, '#c9eaa6', false);
+      circle(4 * p.face, -3, 3, INK, false); circle(10 * p.face, -3, 3, INK, false);
+      ink(2, '#3f7a2a'); ctx.beginPath(); ctx.moveTo(0, -PEA); ctx.quadraticCurveTo(6, -PEA - 12, 14, -PEA - 8); ctx.stroke();
+      ctx.restore();
+    },
+  };
+})();
+
+const WORLDS = { sky: SKY, fridge: FRIDGE, house: HOUSE, night: NIGHT, dune: DUNE, stand: STAND, clock: CLOCK, shapes: SHAPES, orbit: ORBIT, mirror: MIRROR };
+const WORLD_ORDER = ['house', 'night', 'dune', 'stand', 'clock', 'shapes', 'orbit', 'mirror', 'sky', 'fridge'];
 
 // =====================================================================
 // Player, input, travel
@@ -1328,6 +1558,7 @@ function render(frame, st) {
   ctx.setTransform(k, 0, 0, k, -view.x * k, -view.y * k);
   world.draw(t, frame, st, player);
   if (state === 'play') world.avatar(player, frame, Math.hypot(player.vx, player.vy) > 30);
+  if (world.overlay) world.overlay();
   if (player.target && state === 'play') {
     const s = view.s;
     ink(1.6 * s, ['night', 'orbit', 'mirror'].includes(world.id) ? '#ffffff' : INK);

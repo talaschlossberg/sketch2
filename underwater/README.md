@@ -13,14 +13,16 @@ Open `index.html` through any local web server, for example:
 
 | # | Place | You are | How you move | Doors to |
 |---|-------|---------|--------------|----------|
-| 1 | The House | a diver | swim | Night Sky, Grandstand, Shapes, Dune, The Hour |
-| 2 | The Night Sky | a lantern-bearer | drift; nearby stars join up to you | House, Orbits, Mirror |
+| 1 | The House | a diver | swim | Night Sky, Grandstand, Shapes, Dune, The Hour, Sky (parlor window), Fridge |
+| 2 | The Night Sky | a lantern-bearer | drift; nearby stars join up to you | House, Orbits, Mirror, Sky |
 | 3 | The Dune | a parasol walker | walk, ↑ jumps | House, Shapes, Grandstand |
 | 4 | The Grandstand | a briefcase on legs | hop one step at a time, ↑ hops high | House, The Hour, Dune |
 | 5 | The Hour | a little alarm clock | ← → circle the clock face, ↑ ↓ move out and in; time runs slow at the centre and your recent past follows as echoes | House, Grandstand, Mirror, Shapes |
 | 6 | The Shapes | a polygon with an eye | tumble corner over corner; ↑ adds a corner, ↓ removes one (triangle to circle) | House, Dune, Orbits, The Hour |
 | 7 | The Orbits | a small moon | arrows fire small thrusts, gravity does the rest; a dotted trail draws your orbit | Night Sky, Shapes, Mirror |
 | 8 | The Mirror | a spark | steer like a comet (← → turn, ↑ faster, ↓ slower); your trail is mirrored twelve ways | The Hour, Night Sky, Orbits |
+| 9 | The Sky | a small bird | ↑ flaps, ← → steer, let go to glide, ↓ dives; columns of warm air lift you | House, Night Sky, Dune |
+| 10 | The Fridge | a pea | never stops bouncing between glass shelves; ← → nudge, ↑ bounces big | House (the light), Shapes (the cheese), Mirror (the jelly), The Hour (the egg) |
 
 Portals show a flickering slice of where they lead and carry a tag with its name. After you
 arrive somewhere you have to step out of the portal before it can take you back.
@@ -40,6 +42,6 @@ Ambient motion moves in small flip-book steps. Every shape is drawn in code; no 
 
 ## Code
 Each place is one block in `main.js` (`HOUSE`, `NIGHT`, `DUNE`, `STAND`, `CLOCK`, `SHAPES`,
-`ORBIT`, `MIRROR`) with its own palette, `move()` (how its creature moves), `draw()`, `avatar()`
+`ORBIT`, `MIRROR`, `SKY`, `FRIDGE`) with its own palette, `move()` (how its creature moves), `draw()`, `avatar()`
 and `portals`. To add a place, write a block like these, add it to `WORLDS` and `WORLD_ORDER`,
 and point a portal at it. `window.deepHouse.go('orbit')` jumps to a place from the console.
