@@ -1,18 +1,17 @@
 // =====================================================================
-// Blue Hollow: a lagoon dive drawn as a flat elevation.
-// Everything is seen straight on: stepped seabed, things in rows,
-// flat colour with thin ink lines, stipple and pencil texture.
+// Deep House: a dive through a flooded house, seen as a cut-open elevation.
+// Flat colour, thin ink lines, things set out in rows. The attic still has
+// a pocket of air under the roof; everything below it is under water.
 // Arrow keys (or the on-screen pad) swim; clicking swims you to a spot.
-// World units are roughly pixels; 25 units = 1 metre of depth.
 // =====================================================================
 
-const W = 6400, H = 1500, SURF = 190;  // world size and water line
-const UNITS_PER_M = 25;
-const PEARL_COUNT = 20;
-const STEP_FPS = 6;                     // ambient motion moves in small steps, like a flip book
-const COL = 80, RISE = 40;              // seabed step width and height
+const W = 2600, H = 1900;               // world size
+const WL = 470;                         // water line inside the attic
+const UNITS_PER_M = 40;
+const STEP_FPS = 6;                     // ambient motion moves in small flip-book steps
+const GROUND = 1700;                    // lawn level outside
 
-// ---------- seeded random + noise ----------------------------------
+// ---------- seeded random ----------------------------------------------
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -23,70 +22,56 @@ function mulberry32(a) {
 }
 const rand = mulberry32(20260924);
 const rr = (a, b) => a + (b - a) * rand();
-const pick = (arr) => arr[Math.floor(rand() * arr.length)];
-
-const perm = new Uint8Array(512);
-{
-  const p = Array.from({ length: 256 }, (_, i) => i);
-  const r = mulberry32(1337);
-  for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
-  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
-}
-const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-function grad(h, x, y) {
-  const g = h & 7, u = g < 4 ? x : y, v = g < 4 ? y : x;
-  return ((g & 1) ? -u : u) + ((g & 2) ? -2 * v : 2 * v);
-}
-function noise2(x, y) {
-  const xf = Math.floor(x), yf = Math.floor(y);
-  const X = xf & 255, Y = yf & 255;
-  x -= xf; y -= yf;
-  const u = fade(x), v = fade(y);
-  const a = perm[X] + Y, b = perm[X + 1] + Y;
-  return 0.35 * lerp(
-    lerp(grad(perm[a], x, y), grad(perm[b], x - 1, y), u),
-    lerp(grad(perm[a + 1], x, y - 1), grad(perm[b + 1], x - 1, y - 1), u), v);
-}
-function fbm(x, y, oct = 4) {
-  let s = 0, a = 1, f = 1, n = 0;
-  for (let i = 0; i < oct; i++) { s += a * noise2(x * f, y * f); n += a; a *= 0.5; f *= 2.03; }
-  return s / n;
-}
-const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
 
 // ---------- palette ---------------------------------------------------
 const PAL = {
-  sky: '#86b4de', paper: '#f4efe3', cream: '#ece4cf', beige: '#d8cdb2', ink: '#1e1e1e',
-  grey: '#9b9b9b', greyLight: '#c8c5bd', green: '#2f8f4e', greenDark: '#23703b', greenLight: '#58b06c',
-  red: '#e2552d', brick: '#c9442a', brown: '#6b4a3a', blue: '#2e62b0', pink: '#e3a9a4', yellow: '#e8c547', white: '#ffffff',
+  sky: '#bcd2e8', lawn: '#4a9660', paper: '#f4efe3', siding: '#e6ddc8', sidingLine: '#cfc4a8',
+  roof: '#6b5a4e', roofLine: '#56483e', trim: '#d6a39b', ink: '#1e1e1e', red: '#e2552d', blue: '#2e62b0',
+  green: '#2f8f4e', mint: '#8fcaa6', pink: '#e8b4ad', yellow: '#e8c547', grey: '#9b9b9b', greyLight: '#cdcac3',
+  brown: '#6b4a3a', wood: '#a67a55', white: '#ffffff', cream: '#efe7d3',
 };
-// water gets a shade darker every 13 m, in straight bands
-const WATER = ['#bcd8e0', '#a6cad6', '#8fbacb', '#78a7bb'];
-const WATER_BAND = 330;
+const WATER_TINT = 'rgba(70, 130, 185, 0.2)';
 
-// ---------- the stepped seabed -------------------------------------------
-const NCOL = Math.ceil(W / COL);
-const steps = new Float32Array(NCOL);
-for (let i = 0; i < NCOL; i++) {
-  const x = (i + 0.5) * COL;
-  let g = 1060 + fbm(x * 0.0011, 3.7, 4) * 520;
-  g += Math.exp(-(((x - 3700) / 420) ** 2)) * 300;        // the deep trench
-  g += Math.exp(-(((x - 5400) / 300) ** 2)) * 140;
-  g -= Math.exp(-(((x - 900) / 520) ** 2)) * 330;         // shallows near the boat
-  g -= smooth(300, 0, x) * 760 + smooth(W - 300, W, x) * 760;  // lagoon walls
-  steps[i] = Math.round(clamp(g, SURF + 170, H - 60) / RISE) * RISE;
+// ---------- the house -------------------------------------------------------
+// Rooms are interiors; walls and floors are solid; doorways and hatches are gaps.
+const ROOMS = [
+  { id: 'attic', x0: 224, x1: 2376, y0: 400, y1: 700, paper: '#dccdb0', pattern: 'planks', line: '#cbb996' },
+  { id: 'parlor', x0: 224, x1: 1100, y0: 724, y1: 1024, paper: '#efdcd2', pattern: 'stripes', line: '#e2c7bb' },
+  { id: 'kitchen', x0: 1118, x1: 2376, y0: 724, y1: 1024, paper: '#e3ead8', pattern: 'checks', line: '#d2dcc3' },
+  { id: 'bath', x0: 224, x1: 800, y0: 1048, y1: 1348, paper: '#dbe7ec', pattern: 'tiles', line: '#c4d5dc' },
+  { id: 'class', x0: 818, x1: 1800, y0: 1048, y1: 1348, paper: '#f1ead8', pattern: 'dado', line: PAL.blue },
+  { id: 'bed', x0: 1818, x1: 2376, y0: 1048, y1: 1348, paper: '#ebe0e8', pattern: 'dots', line: '#d9c5d6' },
+  { id: 'cellar', x0: 224, x1: 1300, y0: 1372, y1: 1672, paper: '#d6d1c6', pattern: 'bricks', line: '#c2bbad' },
+  { id: 'hall', x0: 1318, x1: 2376, y0: 1372, y1: 1672, paper: '#ebe4d2', pattern: 'plain', line: '#ddd4bd' },
+];
+const room = Object.fromEntries(ROOMS.map((r) => [r.id, r]));
+const SLABS = [   // floor/ceiling slabs with a hatch in each
+  { y: 700, hatch: [1920, 2080] },
+  { y: 1024, hatch: [560, 720] },
+  { y: 1348, hatch: [1560, 1720] },
+];
+const WALLS = [   // interior walls with a doorway at the bottom
+  { x: 1100, y0: 724, y1: 1024 },
+  { x: 800, y0: 1048, y1: 1348 },
+  { x: 1800, y0: 1048, y1: 1348 },
+  { x: 1300, y0: 1372, y1: 1672 },
+];
+const DOOR_H = 150;
+const solids = [
+  { x: 0, y: 0, w: W, h: 400 },                  // roof and everything above the attic
+  { x: 0, y: 0, w: 224, h: H },                  // outside the left wall
+  { x: 2376, y: 0, w: W - 2376, h: H },          // outside the right wall
+  { x: 0, y: 1672, w: W, h: H - 1672 },          // foundation
+];
+for (const s of SLABS) {
+  solids.push({ x: 224, y: s.y, w: s.hatch[0] - 224, h: 24 });
+  solids.push({ x: s.hatch[1], y: s.y, w: 2376 - s.hatch[1], h: 24 });
 }
-const groundAt = (x) => steps[clamp(Math.floor(x / COL), 0, NCOL - 1)];
-// runs of equal height are the treads things stand on
-const platforms = [];
-for (let i = 0; i < NCOL;) {
-  let j = i;
-  while (j + 1 < NCOL && steps[j + 1] === steps[i]) j++;
-  platforms.push({ x0: i * COL, x1: (j + 1) * COL, y: steps[i], use: null });
-  i = j + 1;
-}
+for (const w of WALLS) solids.push({ x: w.x, y: w.y0, w: 18, h: w.y1 - w.y0 - DOOR_H });
+const hits = (x, y, hw, hh) => solids.some((s) => x + hw > s.x && x - hw < s.x + s.w && y + hh > s.y && y - hh < s.y + s.h);
+const floorAt = (x, y) => { for (const r of ROOMS) if (x >= r.x0 && x <= r.x1 && y >= r.y0 - 30 && y <= r.y1) return r.y1; return 1672; };
 
 // ---------- canvas ------------------------------------------------------
 const canvas = document.createElement('canvas');
@@ -98,14 +83,14 @@ function resize() {
   const cw = window.innerWidth, ch = window.innerHeight;
   canvas.width = Math.round(cw * view.dpr); canvas.height = Math.round(ch * view.dpr);
   canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
-  view.scale = Math.min(ch / 820, cw / 560);
+  view.scale = Math.min(ch / 760, cw / 520);
   view.w = cw / view.scale; view.h = ch / view.scale;
 }
 resize();
 window.addEventListener('resize', resize);
 
 // ---------- textures: sponge stipple and pencil grain ------------------------
-function stipple(base, colors, count, size = 96, rMin = 0.5, rMax = 1.3, seed = 3) {
+function stipple(base, colors, count, size = 96, rMin = 0.5, rMax = 1.2, seed = 3) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d');
@@ -118,9 +103,9 @@ function stipple(base, colors, count, size = 96, rMin = 0.5, rMax = 1.3, seed = 
   return ctx.createPattern(c, 'repeat');
 }
 const TEX = {
-  hedge: stipple(PAL.green, ['#1f6f38', '#3aa05a', '#6cc07a', '#23703b', '#8fcf7f'], 2200, 96, 0.5, 1.2, 4),
-  cloud: stipple(null, ['#7d7d7d', '#b5b5b5', '#e8e8e8', '#ffffff', '#5a5a5a'], 2600, 96, 0.4, 1.1, 5),
-  rock: stipple(PAL.grey, ['#7f7f7f', '#b9b9b9', '#6e6e6e', '#d0d0d0'], 1600, 96, 0.4, 1.1, 6),
+  lawn: stipple(PAL.lawn, ['#3d8653', '#5aa56d', '#77b986', '#2f7a47'], 1800, 96, 0.5, 1.2, 4),
+  cloud: stipple(null, ['#a8a8a8', '#d0d0d0', '#f0f0f0', '#ffffff'], 1800, 96, 0.4, 1.0, 5),
+  plant: stipple(PAL.green, ['#256f3e', '#43a062', '#6cbf80'], 900, 64, 0.5, 1.1, 7),
 };
 const grain = (() => {
   const c = document.createElement('canvas');
@@ -128,11 +113,10 @@ const grain = (() => {
   const g = c.getContext('2d');
   g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, 256);
   const r = mulberry32(9);
-  for (let i = 0; i < 3000; i++) { const v = 205 + Math.floor(r() * 45); g.fillStyle = `rgb(${v},${v},${v - 4})`; g.fillRect(r() * 256, r() * 256, 1, 1); }
-  // colored-pencil strokes, all leaning the same way
+  for (let i = 0; i < 2000; i++) { const v = 215 + Math.floor(r() * 40); g.fillStyle = `rgb(${v},${v},${v - 4})`; g.fillRect(r() * 256, r() * 256, 1, 1); }
   g.lineCap = 'round';
-  for (let i = 0; i < 420; i++) {
-    const v = 215 + Math.floor(r() * 35); g.strokeStyle = `rgb(${v},${v},${v - 3})`; g.lineWidth = 0.7;
+  for (let i = 0; i < 260; i++) {
+    const v = 225 + Math.floor(r() * 28); g.strokeStyle = `rgb(${v},${v},${v - 3})`; g.lineWidth = 0.7;
     const x = r() * 256, y = r() * 256, l = 5 + r() * 12;
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + l * 0.6, y - l); g.stroke();
   }
@@ -140,127 +124,132 @@ const grain = (() => {
 })();
 
 // =====================================================================
-// World layout: everything sits on the steps in evenly spaced rows
+// Furnishing the house
 // =====================================================================
+const things = [];   // furniture, drawn in order
+const add = (type, props) => { const t = { type, ...props }; things.push(t); return t; };
 const clams = [];
-{
-  const eligible = platforms.filter((p) => p.x0 > 320 && p.x1 < W - 320);
-  const slots = [];
-  for (const p of eligible) {
-    const n = Math.max(1, Math.floor((p.x1 - p.x0) / 140));
-    for (let k = 0; k < n; k++) slots.push({ p, x: p.x0 + ((k + 0.5) / n) * (p.x1 - p.x0) });
-  }
-  for (let k = 0; k < PEARL_COUNT && k < slots.length; k++) {
-    const s = slots[Math.round(((k + 0.5) * slots.length) / PEARL_COUNT - 0.5)];
-    s.p.use = 'clams';
-    clams.push({ x: s.x, y: s.p.y, taken: false, color: [PAL.red, PAL.yellow, PAL.blue, PAL.grey][k % 4], phase: k });
-  }
-}
-// each remaining tread gets one arrangement
-const scenery = [];
-const vents = [];
-const poles = [300, 1750, 3300, 4850].map((x) => ({ x: Math.floor(x / COL) * COL + COL / 2 }));
-for (const p of platforms) {
-  const w = p.x1 - p.x0, cx = (p.x0 + p.x1) / 2;
-  if (p.x0 < 160 || p.x1 > W - 160) continue;
-  const row = (gap, make) => {
-    const n = Math.max(1, Math.floor((w - 30) / gap));
-    for (let k = 0; k < n; k++) make(p.x0 + ((k + 0.5) / n) * w, k);
-  };
-  if (p.use === 'clams') {
-    if (w >= 240 && clams.filter((c) => c.x > p.x0 && c.x < p.x1).length === 1) { scenery.push({ type: 'star', x: p.x0 + 26, y: p.y }); scenery.push({ type: 'star', x: p.x1 - 26, y: p.y }); }
-    continue;
-  }
-  const deep = p.y > 1150, shallow = p.y < 950;
-  const r = rand();
-  if (deep && r < 0.2 && w >= 120) {
-    scenery.push({ type: 'vent', x: cx, y: p.y }); vents.push({ x: cx, y: p.y - 92 }); p.use = 'vent';
-  } else if (r < (shallow ? 0.3 : 0.12) && w >= 160) {
-    scenery.push({ type: 'hedge', x0: p.x0 + 8, x1: p.x1 - 8, y: p.y }); p.use = 'hedge';
-  } else if (r < 0.52) {
-    const h = clamp(p.y - SURF - 160, 140, deep ? 520 : 300) * rr(0.8, 1);
-    row(56, (x, k) => scenery.push({ type: 'kelp', x, y: p.y, h: h * (k % 2 ? 0.86 : 1), phase: k * 0.9 })); p.use = 'kelp';
-  } else if (r < 0.68) {
-    row(64, (x) => scenery.push({ type: 'urchin', x, y: p.y })); p.use = 'urchins';
-  } else if (r < 0.84) {
-    scenery.push({ type: 'coral', x: cx, y: p.y, n: 3 + Math.floor(rand() * 4) }); p.use = 'coral';
-  } else if (w >= 120) {
-    scenery.push({ type: 'rock', x: cx, y: p.y, w: Math.min(w - 30, rr(90, 170)), h: rr(36, 60) }); p.use = 'rock';
-  }
-}
-const clouds = [];
-for (let x = 200; x < W; x += rr(500, 900)) {
-  const parts = [];
-  for (let k = 0; k < 5; k++) parts.push({ dx: k * 34 - 70 + rr(-8, 8), dy: rr(-10, 10), rx: rr(40, 64), ry: rr(14, 22) });
-  clouds.push({ x, y: rr(55, 110), parts });
-}
-const boat = { x: 760 };
+const clamOn = (x, y) => clams.push({ x, y, taken: false, color: [PAL.red, PAL.yellow, PAL.blue, PAL.green][clams.length % 4], phase: clams.length });
 
-// ---------- fish, swimming in formation along straight lanes ---------------------
+// attic: suitcases, a round window, and a long row of folding chairs; four of them hold clams
+add('suitcases', { x: 300, y: 700 });
+add('roundWindow', { x: 1300, y: 520 });
+for (let i = 0; i < 14; i++) {
+  const x = 640 + i * 82;
+  add('chair', { x, y: 700, face: 1 });
+  if ([1, 5, 9, 12].includes(i)) clamOn(x, 700 - 46);
+}
+add('hatchLadder', { x: 2000, y0: 724, y1: 1024 });
+// parlor
+add('painting', { x: 440, y: 830 });
+add('sofa', { x: 480, y: 1024 }); clamOn(420, 1024 - 44);
+add('lamp', { x: 690, y: 1024 });
+add('sideTable', { x: 790, y: 1024 }); clamOn(790, 1024 - 70);
+add('window', { x: 900, y: 800 });
+add('clock', { x: 1020, y: 1024 });
+add('plant', { x: 270, y: 1024 });
+// kitchen
+add('window', { x: 1260, y: 790 });
+add('table', { x: 1380, y: 1024 }); clamOn(1380, 1024 - 74);
+add('chair', { x: 1290, y: 1024, face: 1 }); add('chair', { x: 1470, y: 1024, face: -1 });
+add('fridge', { x: 1620, y: 1024 }); clamOn(1620, 1024 - 176);
+add('stove', { x: 1740, y: 1024 });
+add('counter', { x0: 2130, x1: 2350, y: 1024 }); clamOn(2250, 1024 - 84);
+add('shelf', { x0: 2140, x1: 2340, y: 850 });
+add('hatchLadder', { x: 640, y0: 1048, y1: 1348 });
+// bathroom
+add('tub', { x: 350, y: 1348 }); clamOn(350, 1348 - 36);
+add('mirror', { x: 540, y: 1170 });
+add('sink', { x: 540, y: 1348 }); clamOn(540, 1348 - 86);
+// classroom (after the primer): an easel with a blackboard, desks in a row, a green wardrobe, a hanging lamp
+add('easel', { x: 930, y: 1348 });
+for (let i = 0; i < 4; i++) { const x = 1140 + i * 150; add('desk', { x, y: 1348 }); clamOn(x - 12, 1348 - 62); }
+add('picture', { x: 1500, y: 1140 });
+add('wardrobe', { x: 1735, y: 1348 });
+add('pendant', { x: 1250, y: 1048 });
+add('hatchLadder', { x: 1640, y0: 1372, y1: 1672 });
+// bedroom
+add('bed', { x: 2010, y: 1348 }); clamOn(1935, 1348 - 70);
+add('nightstand', { x: 2180, y: 1348 }); clamOn(2180, 1348 - 56);
+add('window', { x: 2300, y: 1130 });
+// cellar
+add('boiler', { x: 330, y: 1672 });
+add('boxes', { x: 560, y: 1672 }); clamOn(560, 1672 - 118);
+add('washer', { x: 820, y: 1672 });
+add('jars', { x0: 950, x1: 1250, y: 1520 });
+// hall: an audience of folding chairs facing a red door that opens onto nothing
+for (let i = 0; i < 9; i++) {
+  const x = 1440 + i * 76;
+  if (x > 1600 && x < 1690) continue;    // leave room for the ladder
+  add('chair', { x, y: 1672, face: 1 });
+  if (i === 2 || i === 7) clamOn(x, 1672 - 46);
+}
+add('redDoor', { x: 2270, y: 1672 });
+
+// wall splats, like thrown paint
+const splats = [];
+for (const r of ROOMS) {
+  const n = r.id === 'hall' || r.id === 'attic' ? 5 : 2;
+  for (let i = 0; i < n; i++) splats.push({ x: rr(r.x0 + 40, r.x1 - 40), y: rr(r.y0 + 30, r.y0 + 120), r: rr(6, 10), color: [PAL.red, PAL.blue, PAL.yellow, PAL.grey][i % 4], rot: rand() * 6 });
+}
+
+// ---------- fish, swimming in formation from wall to wall ---------------------
 const KINDS = [
-  { body: PAL.blue, fin: PAL.yellow, mark: 'stripe', markColor: PAL.paper, len: 58 },
-  { body: PAL.yellow, fin: PAL.red, mark: 'dot', markColor: PAL.ink, len: 44 },
-  { body: PAL.red, fin: PAL.ink, mark: 'stripe', markColor: PAL.paper, len: 40 },
-  { body: PAL.greyLight, fin: PAL.blue, mark: 'line', markColor: PAL.blue, len: 32 },
-  { body: PAL.greenLight, fin: PAL.green, mark: 'dot', markColor: PAL.paper, len: 52 },
-  { body: PAL.pink, fin: PAL.red, mark: 'stripe', markColor: PAL.red, len: 48 },
+  { body: PAL.blue, fin: PAL.yellow, mark: 'stripe', markColor: PAL.paper, len: 46 },
+  { body: PAL.yellow, fin: PAL.red, mark: 'dot', markColor: PAL.ink, len: 36 },
+  { body: PAL.red, fin: PAL.ink, mark: 'stripe', markColor: PAL.paper, len: 34 },
+  { body: PAL.greyLight, fin: PAL.blue, mark: 'line', markColor: PAL.blue, len: 28 },
+  { body: PAL.mint, fin: PAL.green, mark: 'dot', markColor: PAL.paper, len: 40 },
+  { body: PAL.pink, fin: PAL.red, mark: 'stripe', markColor: PAL.red, len: 38 },
 ];
-const schools = KINDS.map((kind, i) => {
-  const rows = 2 + (i % 2), cols = 3 + (i % 3);
-  let x, y;
-  do { x = rr(400, W - 400); y = Math.round(rr(SURF + 90, groundAt(x) - 110) / 20) * 20; } while (groundAt(x) - y < 110);
+const LANES = [['attic', 570], ['parlor', 880], ['kitchen', 860], ['class', 1150], ['hall', 1470], ['cellar', 1440]];
+const schools = LANES.map(([id, y], i) => {
+  const r = room[id], kind = KINDS[i], rows = 2 + (i % 2), cols = 3 + (i % 2);
   const members = [];
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    members.push({ ox: c * kind.len * 1.5 + (r % 2) * kind.len * 0.75, oy: r * kind.len * 0.7, dx: 0, dy: 0, x: 0, y: 0 });
-  }
-  return { kind, x, y, dir: rand() < 0.5 ? -1 : 1, speed: rr(45, 80), members, width: cols * kind.len * 1.5, height: rows * kind.len * 0.7 };
+  for (let a = 0; a < rows; a++) for (let c = 0; c < cols; c++) members.push({ ox: c * kind.len * 1.5 + (a % 2) * kind.len * 0.75, oy: a * kind.len * 0.75, dx: 0, dy: 0, x: 0, y: 0 });
+  const width = cols * kind.len * 1.5;
+  return { kind, room: r, y, x: rr(r.x0 + width + 40, r.x1 - 60), dir: rand() < 0.5 ? -1 : 1, speed: rr(35, 60), members, width };
 });
 function updateFish(dt, diver) {
   for (const s of schools) {
     s.x += s.dir * s.speed * dt;
-    const front = s.x + s.dir * (s.width * 0.1 + 40);
-    const back = s.x - s.dir * s.width;
-    const blocked = (xx) => groundAt(xx) < s.y + s.height + 40 || xx < 140 || xx > W - 140;
-    if (blocked(front) || blocked(s.x)) {
-      s.dir *= -1; s.x = back;      // turn around: the whole formation swims back the other way
-    }
+    if (s.dir > 0 && s.x > s.room.x1 - 40) { s.dir = -1; s.x = s.room.x1 - 40 - s.width; }
+    if (s.dir < 0 && s.x < s.room.x0 + 40) { s.dir = 1; s.x = s.room.x0 + 40 + s.width; }
     for (const m of s.members) {
-      const tx = s.x - s.dir * m.ox, ty = s.y + m.oy;
-      const px = tx + m.dx, py = ty + m.dy;
+      const px = s.x - s.dir * m.ox + m.dx, py = s.y + m.oy + m.dy;
       const ddx = px - diver.x, ddy = py - diver.y, d = Math.hypot(ddx, ddy);
-      if (d < 150 && d > 1) { m.dx += ddx / d * (150 - d) * 3 * dt; m.dy += ddy / d * (150 - d) * 3 * dt; }
+      if (d < 130 && d > 1) { m.dx += ddx / d * (130 - d) * 3 * dt; m.dy += ddy / d * (130 - d) * 3 * dt; }
       const k = Math.exp(-1.5 * dt);
       m.dx *= k; m.dy *= k;
-      m.x = px; m.y = Math.min(py, groundAt(px) - 20);
+      m.x = clamp(px, s.room.x0 + 20, s.room.x1 - 20);
+      m.y = clamp(py, Math.max(s.room.y0 + 16, WL + 12), s.room.y1 - 16);
     }
   }
 }
 
-// ---------- jellyfish, hung in a loose grid over the deep water ---------------
-const jellies = [];
-for (let i = 0; jellies.length < 12 && i < 60; i++) {
-  const x = 1900 + (jellies.length * 330) + rr(-30, 30);
-  const g = groundAt(x);
-  if (g < 900 || x > W - 300) continue;
-  const y = Math.round(lerp(SURF + 200, g - 160, rr(0.3, 0.8)) / 40) * 40;
-  jellies.push({ hx: x, hy: y, x, y, s: rr(0.85, 1.25), color: pick([PAL.pink, PAL.paper, PAL.yellow]), phase: i });
-}
+// ---------- jellyfish ----------------------------------------------------------
+const jellies = [[1990, 1150], [2250, 1210], [720, 1470], [1080, 1450], [1950, 1450]].map(([x, y], i) => (
+  { hx: x, hy: y, x, y, s: rr(0.8, 1.1), color: [PAL.pink, PAL.paper, PAL.yellow][i % 3] }));
 
 // ---------- bubbles ---------------------------------------------------------------
 const bubbles = [];
-function spawnBubble(x, y, r = rr(3, 6)) {
-  if (bubbles.length > 300) bubbles.shift();
-  bubbles.push({ x, y, r, vy: rr(50, 80) + r * 5 });
+function spawnBubble(x, y, r = rr(2.5, 5)) {
+  if (bubbles.length > 200) bubbles.shift();
+  bubbles.push({ x, y, r, vy: rr(45, 75) + r * 5, top: 0 });
 }
 function updateBubbles(dt) {
-  for (const b of bubbles) b.y -= b.vy * dt;
-  for (let i = bubbles.length - 1; i >= 0; i--) if (bubbles[i].y < SURF + 6) bubbles.splice(i, 1);
+  for (const b of bubbles) {
+    b.y -= b.vy * dt;
+    if (hits(b.x, b.y, 1, 1) || b.y < WL + 4) b.dead = true;   // pop against ceilings and at the surface
+  }
+  for (let i = bubbles.length - 1; i >= 0; i--) if (bubbles[i].dead) bubbles.splice(i, 1);
 }
 
 // =====================================================================
 // Player, input, game state
 // =====================================================================
-const START = { x: boat.x + 140, y: SURF + 70 };
+const HW = 30, HH = 12;   // the diver's collision box
+const START = { x: 520, y: WL + 18 };
 const diver = { x: START.x, y: START.y, vx: 0, vy: 0, face: 1, target: null };
 const game = { state: 'menu', o2: 100, score: 0, time: 0, stingCooldown: 0, breathTimer: 2 };
 const keys = new Set();
@@ -269,7 +258,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   hud: $('hudRoot'), depth: $('hDepth'), pearls: $('hPearls'), pearlsOf: $('hPearlsOf'),
   o2: $('o2'), o2Fill: $('o2Fill'), o2Val: $('o2Val'), toast: $('toast'), flash: $('flash'),
-  arrow: $('sonarArrow'), sonarDist: $('sonarDist'),
+  arrow: $('sonarArrow'), sonarDist: $('sonarDist'), focusHint: $('focusHint'),
   start: $('startScreen'), end: $('endScreen'),
   endTitle: $('endTitle'), endText: $('endText'), endEyebrow: $('endEyebrow'), endNum: $('endNum'),
 };
@@ -298,25 +287,25 @@ function endGame(won) {
   if (won) {
     let best = null;
     try {
-      best = Number(localStorage.getItem('blueHollowBest')) || null;
-      if (!best || game.time < best) localStorage.setItem('blueHollowBest', String(game.time));
+      best = Number(localStorage.getItem('deepHouseBest')) || null;
+      if (!best || game.time < best) localStorage.setItem('deepHouseBest', String(game.time));
     } catch (e) { /* storage unavailable */ }
     const record = !best || game.time < best;
     ui.endEyebrow.textContent = record ? 'New best time' : 'Dive log';
     ui.endTitle.textContent = 'Every pearl found';
-    ui.endText.textContent = `You cleared Blue Hollow in ${mins}:${secs}` +
+    ui.endText.textContent = `You cleared the house in ${mins}:${secs}` +
       (best && !record ? `. Your best is ${Math.floor(best / 60)}:${Math.floor(best % 60).toString().padStart(2, '0')}.` : '.');
   } else {
     ui.endEyebrow.textContent = 'Dive log';
     ui.endTitle.textContent = 'Out of air';
-    ui.endText.textContent = `You surfaced with ${game.score} of ${clams.length} pearls after ${mins}:${secs} underwater. Come up to breathe sooner next time.`;
+    ui.endText.textContent = `You found ${game.score} of ${clams.length} pearls in ${mins}:${secs}. Swim back up to the attic to breathe sooner next time.`;
   }
 }
 $('startBtn').addEventListener('click', startGame);
 $('restartBtn').addEventListener('click', startGame);
 
-// Arrow keys. The page may sit inside another page (an embed or viewer), so the canvas takes
-// keyboard focus whenever the dive starts or the scene is clicked, and key names are normalised.
+// Arrow keys. Inside a viewer or embed, the page only hears keys while it has focus, so it takes
+// focus whenever the dive starts or the house is clicked, and shows a hint when focus is elsewhere.
 const ARROW_NAMES = { ArrowUp: 'up', Up: 'up', ArrowDown: 'down', Down: 'down', ArrowLeft: 'left', Left: 'left', ArrowRight: 'right', Right: 'right' };
 canvas.tabIndex = 0;
 function takeFocus() { try { window.focus(); canvas.focus({ preventScroll: true }); } catch (e) { /* not focusable here */ } }
@@ -327,8 +316,10 @@ function onKey(e, down) {
   if (down) { keys.add(dir); diver.target = null; } // taking the keys cancels a click-to-swim
   else keys.delete(dir);
 }
-document.addEventListener('keydown', (e) => onKey(e, true), true);
-document.addEventListener('keyup', (e) => onKey(e, false), true);
+for (const target of [window, document]) {
+  target.addEventListener('keydown', (e) => onKey(e, true), true);
+  target.addEventListener('keyup', (e) => onKey(e, false), true);
+}
 window.addEventListener('blur', () => keys.clear());
 
 // On-screen arrows: press and hold with the mouse or a finger.
@@ -338,20 +329,19 @@ for (const btn of document.querySelectorAll('[data-dir]')) {
   const on = (e) => { e.preventDefault(); pad.add(dir); diver.target = null; btn.classList.add('on'); takeFocus(); };
   const off = () => { pad.delete(dir); btn.classList.remove('on'); };
   btn.addEventListener('pointerdown', on);
-  btn.addEventListener('pointerup', off);
-  btn.addEventListener('pointerleave', off);
-  btn.addEventListener('pointercancel', off);
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel', 'lostpointercapture']) btn.addEventListener(ev, off);
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 const held = (dir) => keys.has(dir) || pad.has(dir);
 
-// click (or tap) anywhere in the water to swim there; click a clam to swim to it
+// click (or tap) anywhere to swim there; click a clam to swim to it
 canvas.addEventListener('pointerdown', (e) => {
   if (game.state !== 'play') return;
   takeFocus();
   const wx = view.x + e.clientX / view.scale, wy = view.y + e.clientY / view.scale;
-  const clam = clams.find((c) => !c.taken && Math.hypot(c.x - wx, c.y - 30 - wy) < 70);
-  if (clam) diver.target = { x: clam.x, y: clam.y - 40 };
-  else diver.target = { x: wx, y: clamp(wy, SURF + 20, groundAt(wx) - 34) };
+  const clam = clams.find((c) => !c.taken && Math.hypot(c.x - wx, c.y - 20 - wy) < 60);
+  if (clam) diver.target = { x: clam.x, y: clam.y - 30 };
+  else diver.target = { x: wx, y: Math.max(wy, WL + 14) };
 });
 
 // ---------- player update -------------------------------------------------
@@ -360,40 +350,34 @@ function updateDiver(dt) {
   let iy = (held('down') ? 1 : 0) - (held('up') ? 1 : 0);
   if (diver.target) {
     const dx = diver.target.x - diver.x, dy = diver.target.y - diver.y, d = Math.hypot(dx, dy);
-    if (d < 20) diver.target = null;
-    else {
-      ix = dx / d; iy = dy / d;
-      // climb over a step that is in the way
-      if (groundAt(diver.x + Math.sign(dx) * 50) - 34 < diver.y + 4) iy = -1;
-    }
+    if (d < 18 || diver.stuck > 0.6) { diver.target = null; diver.stuck = 0; }
+    else { ix = dx / d; iy = dy / d; }
   }
   const l = Math.hypot(ix, iy);
   if (l > 1) { ix /= l; iy /= l; }
-  diver.vx += ix * 900 * dt; diver.vy += iy * 900 * dt;
+  diver.vx += ix * 800 * dt; diver.vy += iy * 800 * dt;
   const drag = Math.exp(-2.6 * dt);
   diver.vx *= drag; diver.vy *= drag;
-  diver.vy += 12 * dt;                             // a little negative buoyancy
-  const nx = clamp(diver.x + diver.vx * dt, 120, W - 120);
-  const edge = nx + Math.sign(diver.vx) * 40;       // the diver's nose or fins
-  if (groundAt(edge) - 30 < diver.y) diver.vx = 0;  // a step face blocks the way
-  else diver.x = nx;
-  diver.y += diver.vy * dt;
-  const floor = Math.min(groundAt(diver.x - 30), groundAt(diver.x + 30)) - 30;
-  if (diver.y > floor) { diver.y = floor; diver.vy = Math.min(diver.vy, 0); }
-  if (diver.y < SURF + 14) { diver.y = SURF + 14; diver.vy = Math.max(diver.vy, 0); }
+  diver.vy += 10 * dt;                             // a little negative buoyancy
+  // move one axis at a time so walls and floors stop the diver cleanly
+  const nx = diver.x + diver.vx * dt;
+  if (hits(nx, diver.y, HW, HH)) { diver.vx = 0; if (diver.target) diver.stuck = (diver.stuck || 0) + dt; } else diver.x = nx;
+  let ny = Math.max(diver.y + diver.vy * dt, WL + 10);
+  if (hits(diver.x, ny, HW, HH)) { diver.vy = 0; if (diver.target) diver.stuck = (diver.stuck || 0) + dt; } else diver.y = ny;
+  if (diver.y <= WL + 10) diver.vy = Math.max(diver.vy, 0);
   if (Math.abs(diver.vx) > 20) diver.face = Math.sign(diver.vx);
 
-  // air
-  const depth = (diver.y - SURF) / UNITS_PER_M;
-  if (diver.y < SURF + 34) {
+  // air: only the attic has any
+  const depth = Math.max(0, diver.y - WL) / UNITS_PER_M;
+  if (diver.y < WL + 26) {
     if (game.o2 < 99) toast('Breathing', 0.6);
     game.o2 = Math.min(100, game.o2 + 30 * dt);
   } else {
-    game.o2 -= (0.9 + depth * 0.03) * dt;
+    game.o2 -= (1.1 + depth * 0.05) * dt;
     game.breathTimer -= dt;
     if (game.breathTimer <= 0) {
       game.breathTimer = rr(3, 4.2);
-      for (let i = 0; i < 6; i++) spawnBubble(diver.x + diver.face * 40 + rr(-5, 5), diver.y - 14 - i * 9, rr(2.5, 5));
+      for (let i = 0; i < 5; i++) spawnBubble(diver.x + diver.face * 34 + rr(-4, 4), diver.y - 12 - i * 8);
     }
   }
   if (game.o2 <= 0) { game.o2 = 0; endGame(false); }
@@ -402,11 +386,11 @@ function updateDiver(dt) {
 function updateInteractions(dt) {
   game.stingCooldown -= dt;
   for (const j of jellies) {
-    if (Math.hypot(j.x - diver.x, j.y + 20 * j.s - diver.y) < 36 * j.s + 26 && game.stingCooldown <= 0) {
+    if (Math.hypot(j.x - diver.x, j.y + 18 * j.s - diver.y) < 30 * j.s + 22 && game.stingCooldown <= 0) {
       game.stingCooldown = 1.5;
       game.o2 = Math.max(0, game.o2 - 12);
       const dx = diver.x - j.x, dy = diver.y - j.y, d = Math.hypot(dx, dy) || 1;
-      diver.vx += dx / d * 260; diver.vy += dy / d * 260;
+      diver.vx += dx / d * 240; diver.vy += dy / d * 240;
       diver.target = null;
       ui.flash.classList.add('on');
       requestAnimationFrame(() => requestAnimationFrame(() => ui.flash.classList.remove('on')));
@@ -416,18 +400,18 @@ function updateInteractions(dt) {
   let nearest = null, nd = Infinity;
   for (const c of clams) {
     if (c.taken) continue;
-    const d = Math.hypot(c.x - diver.x, c.y - 30 - diver.y);
-    if (d < 70) {
+    const d = Math.hypot(c.x - diver.x, c.y - 20 - diver.y);
+    if (d < 58) {
       c.taken = true;
       game.score++;
       game.o2 = Math.min(100, game.o2 + 10);
-      for (let i = 0; i < 10; i++) spawnBubble(c.x + rr(-16, 16), c.y - 20 - i * 6, rr(2, 4));
+      for (let i = 0; i < 8; i++) spawnBubble(c.x + rr(-12, 12), c.y - 16 - i * 5, rr(2, 4));
       toast(game.score === clams.length ? 'Last pearl!' : `Pearl ${game.score} of ${clams.length} · +10% air`);
       if (game.score === clams.length) setTimeout(() => endGame(true), 900);
     } else if (d < nd) { nd = d; nearest = c; }
   }
   if (nearest) {
-    const ang = Math.atan2(nearest.x - diver.x, -(nearest.y - 30 - diver.y)) * 180 / Math.PI;
+    const ang = Math.atan2(nearest.x - diver.x, -(nearest.y - 20 - diver.y)) * 180 / Math.PI;
     ui.arrow.setAttribute('transform', `rotate(${ang.toFixed(1)})`);
     ui.sonarDist.innerHTML = `${Math.round(nd / UNITS_PER_M)}<small>m</small>`;
   } else ui.sonarDist.textContent = '--';
@@ -439,24 +423,25 @@ function updateHUD(dt) {
   hudTimer -= dt;
   if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) ui.toast.classList.remove('on'); }
   if (hudTimer > 0) return;
-  hudTimer = 0.1;
-  const depth = Math.max(0, (diver.y - SURF) / UNITS_PER_M);
+  hudTimer = 0.15;
+  const depth = Math.max(0, (diver.y - WL) / UNITS_PER_M);
   ui.depth.innerHTML = `${Math.round(depth)}<small>m</small>`;
   ui.pearls.textContent = String(game.score);
   ui.pearlsOf.textContent = `of ${clams.length}`;
   ui.o2Fill.style.transform = `scaleX(${(game.o2 / 100).toFixed(3)})`;
   ui.o2Val.textContent = `${Math.ceil(game.o2)}%`;
   ui.o2.classList.toggle('low', game.o2 < 25);
+  ui.focusHint.hidden = document.hasFocus();
 }
 
 // =====================================================================
 // Drawing: flat fills, thin ink lines, everything straight on
 // =====================================================================
-const INK_W = 1.6;
-function ink(w = INK_W) { ctx.strokeStyle = PAL.ink; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
+function ink(w = 1.5) { ctx.strokeStyle = PAL.ink; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
+function box(x, y, w, h, fill, lw = 1.5) { ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); ink(lw); ctx.strokeRect(x, y, w, h); }
+function circle(x, y, r, fill, stroke = true) { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); if (stroke) { ink(); ctx.stroke(); } }
 
 function drawSplat(x, y, r, color, rot) {
-  // a paint-splat star: eight uneven points
   ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -468,140 +453,187 @@ function drawSplat(x, y, r, color, rot) {
   ctx.beginPath(); ctx.arc(0, 0, r * 0.32, 0, 7); ctx.fill();
   ctx.restore();
 }
+function drawWallpaper(r) {
+  ctx.fillStyle = r.paper;
+  ctx.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+  ctx.fillStyle = r.line;
+  const w = r.x1 - r.x0, h = r.y1 - r.y0;
+  if (r.pattern === 'stripes') for (let x = r.x0 + 12; x < r.x1; x += 28) ctx.fillRect(x, r.y0, 8, h);
+  else if (r.pattern === 'planks') for (let x = r.x0 + 40; x < r.x1; x += 40) ctx.fillRect(x, r.y0, 1.5, h);
+  else if (r.pattern === 'checks') for (let y = r.y0; y < r.y1; y += 30) for (let x = r.x0 + ((y - r.y0) / 30 % 2) * 30; x < r.x1; x += 60) ctx.fillRect(x, y, 30, 30);
+  else if (r.pattern === 'tiles') { for (let y = r.y0 + 30; y < r.y1; y += 30) ctx.fillRect(r.x0, y, w, 1.5); for (let x = r.x0 + 30; x < r.x1; x += 30) ctx.fillRect(x, r.y0, 1.5, h); }
+  else if (r.pattern === 'dots') for (let y = r.y0 + 20; y < r.y1; y += 34) for (let x = r.x0 + 20 + ((y - r.y0) % 68 ? 17 : 0); x < r.x1; x += 34) { ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill(); }
+  else if (r.pattern === 'bricks') for (let y = r.y0 + 20, k = 0; y < r.y1; y += 20, k++) { ctx.fillRect(r.x0, y, w, 1.5); for (let x = r.x0 + (k % 2) * 30; x < r.x1; x += 60) ctx.fillRect(x, y - 20, 1.5, 20); }
+  else if (r.pattern === 'dado') { ctx.fillRect(r.x0, r.y1 - 36, w, 36); }
+}
+function drawChair(x, y, face, color = PAL.brown) {
+  // a folding chair in profile
+  ctx.save(); ctx.translate(x, y); ctx.scale(face, 1);
+  ink(3.2); ctx.strokeStyle = color;
+  ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(12, -42); ctx.moveTo(14, 0); ctx.lineTo(-10, -42); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-18, -42); ctx.lineTo(16, -42); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-16, -42); ctx.lineTo(-20, -86); ctx.stroke();
+  ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-19, -78); ctx.lineTo(-4, -78); ctx.moveTo(-18, -66); ctx.lineTo(-4, -66); ctx.stroke();
+  ctx.restore();
+}
+function drawThing(t, st) {
+  const { x, y } = t;
+  switch (t.type) {
+    case 'chair': drawChair(x, y, t.face); break;
+    case 'suitcases':
+      box(x - 40, y - 36, 80, 36, PAL.brown); box(x - 34, y - 64, 68, 28, PAL.red); box(x - 26, y - 86, 52, 22, PAL.greyLight);
+      ink(); for (const [yy, ww] of [[-36, 16], [-64, 14], [-86, 12]]) { ctx.strokeRect(x - ww / 2, y + yy - 6, ww, 6); }
+      break;
+    case 'roundWindow':
+      circle(x, y, 44, PAL.sky); ink(2); ctx.beginPath(); ctx.moveTo(x - 44, y); ctx.lineTo(x + 44, y); ctx.moveTo(x, y - 44); ctx.lineTo(x, y + 44); ctx.stroke();
+      ctx.lineWidth = 6; ctx.strokeStyle = PAL.trim; ctx.beginPath(); ctx.arc(x, y, 47, 0, 7); ctx.stroke();
+      break;
+    case 'window': {
+      box(x - 40, y - 50, 80, 100, PAL.sky, 2);
+      ctx.fillStyle = PAL.white; ctx.fillRect(x - 36, y - 46, 72, 92);
+      ctx.fillStyle = PAL.sky; for (const [cx, cy] of [[-34, -44], [2, -44], [-34, 2], [2, 2]]) ctx.fillRect(x + cx, y + cy, 32, 42);
+      ctx.fillStyle = PAL.trim; ctx.fillRect(x - 48, y + 50, 96, 8);
+      break;
+    }
+    case 'painting':
+      box(x - 70, y - 44, 140, 88, PAL.paper, 2);
+      ctx.fillStyle = PAL.mint; ctx.fillRect(x - 64, y + 10, 128, 28);
+      box(x - 20, y - 14, 40, 26, PAL.red, 1.2); ctx.fillStyle = PAL.brown; ctx.beginPath(); ctx.moveTo(x - 26, y - 14); ctx.lineTo(x, y - 32); ctx.lineTo(x + 26, y - 14); ctx.fill();
+      break;
+    case 'picture':
+      box(x - 46, y - 34, 92, 68, PAL.paper, 2);
+      box(x - 30, y - 6, 26, 26, PAL.red, 1.2); circle(x + 18, y - 8, 12, PAL.blue, false); ctx.fillStyle = PAL.green; ctx.fillRect(x - 2, y + 6, 22, 14);
+      break;
+    case 'sofa':
+      ctx.fillStyle = PAL.blue;
+      ctx.beginPath(); ctx.roundRect(x - 110, y - 80, 220, 50, 10); ctx.fill();
+      ctx.fillRect(x - 118, y - 40, 236, 30);
+      ctx.beginPath(); ctx.roundRect(x - 126, y - 62, 22, 52, 8); ctx.roundRect(x + 104, y - 62, 22, 52, 8); ctx.fill();
+      ctx.fillStyle = PAL.brown; ctx.fillRect(x - 108, y - 10, 8, 10); ctx.fillRect(x + 100, y - 10, 8, 10);
+      ink(1.2); ctx.beginPath(); ctx.moveTo(x, y - 76); ctx.lineTo(x, y - 12); ctx.stroke();
+      break;
+    case 'lamp':
+      ctx.fillStyle = PAL.ink; ctx.fillRect(x - 1.5, y - 150, 3, 150); ctx.fillRect(x - 16, y - 4, 32, 4);
+      ctx.fillStyle = PAL.yellow; ctx.beginPath(); ctx.moveTo(x - 16, y - 150); ctx.lineTo(x + 16, y - 150); ctx.lineTo(x + 26, y - 186); ctx.lineTo(x - 26, y - 186); ctx.closePath(); ctx.fill(); ink(1.2); ctx.stroke();
+      break;
+    case 'sideTable':
+      ctx.fillStyle = PAL.wood; ctx.fillRect(x - 30, y - 60, 60, 8); ctx.fillRect(x - 26, y - 52, 5, 52); ctx.fillRect(x + 21, y - 52, 5, 52); break;
+    case 'clock':
+      box(x - 26, y - 200, 52, 200, PAL.wood); circle(x, y - 166, 18, PAL.paper);
+      ink(1.5); ctx.beginPath(); ctx.moveTo(x, y - 166); ctx.lineTo(x, y - 178); ctx.moveTo(x, y - 166); ctx.lineTo(x + 9, y - 162); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, y - 140); ctx.lineTo(x + ((Math.floor(st * 2) % 2) ? 8 : -8), y - 70); ctx.stroke();
+      circle(x + ((Math.floor(st * 2) % 2) ? 8 : -8), y - 66, 7, PAL.yellow);
+      break;
+    case 'plant':
+      box(x - 18, y - 36, 36, 36, PAL.red); ctx.fillStyle = TEX.plant; ctx.beginPath(); ctx.ellipse(x, y - 80, 30, 46, 0, 0, 7); ctx.fill();
+      break;
+    case 'table':
+      ctx.fillStyle = PAL.wood; ctx.fillRect(x - 90, y - 64, 180, 8); ctx.fillRect(x - 84, y - 56, 6, 56); ctx.fillRect(x + 78, y - 56, 6, 56);
+      ctx.fillStyle = PAL.red; ctx.fillRect(x - 70, y - 72, 22, 8);
+      break;
+    case 'fridge':
+      ctx.fillStyle = PAL.white; ctx.beginPath(); ctx.roundRect(x - 38, y - 166, 76, 166, 8); ctx.fill(); ink(1.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x - 38, y - 110); ctx.lineTo(x + 38, y - 110); ctx.stroke();
+      ctx.fillStyle = PAL.ink; ctx.fillRect(x + 24, y - 150, 4, 26); ctx.fillRect(x + 24, y - 96, 4, 34);
+      break;
+    case 'stove':
+      box(x - 40, y - 80, 80, 80, PAL.greyLight); box(x - 28, y - 60, 56, 40, PAL.ink);
+      for (const dx of [-18, 18]) { ctx.fillStyle = PAL.ink; ctx.fillRect(x + dx - 12, y - 84, 24, 4); }
+      break;
+    case 'counter':
+      ctx.fillStyle = PAL.mint; ctx.fillRect(t.x0, y - 76, t.x1 - t.x0, 76); ctx.fillStyle = PAL.paper; ctx.fillRect(t.x0 - 6, y - 82, t.x1 - t.x0 + 12, 8);
+      ink(1.2); for (let xx = t.x0; xx < t.x1; xx += 55) ctx.strokeRect(xx + 4, y - 68, 47, 60);
+      break;
+    case 'shelf':
+      ctx.fillStyle = PAL.wood; ctx.fillRect(t.x0, y, t.x1 - t.x0, 6);
+      for (let xx = t.x0 + 16, k = 0; xx < t.x1 - 10; xx += 30, k++) { ctx.fillStyle = [PAL.paper, PAL.blue, PAL.red][k % 3]; ctx.beginPath(); ctx.arc(xx, y - 12, 12, Math.PI, 0); ctx.fill(); ctx.fillRect(xx - 12, y - 12, 24, 12); }
+      break;
+    case 'hatchLadder':
+      ink(2.2); ctx.strokeStyle = PAL.brown;
+      ctx.beginPath(); ctx.moveTo(x - 18, t.y0); ctx.lineTo(x - 18, t.y1); ctx.moveTo(x + 18, t.y0); ctx.lineTo(x + 18, t.y1); ctx.stroke();
+      for (let yy = t.y0 + 22; yy < t.y1; yy += 26) { ctx.beginPath(); ctx.moveTo(x - 18, yy); ctx.lineTo(x + 18, yy); ctx.stroke(); }
+      break;
+    case 'tub':
+      ctx.fillStyle = PAL.white; ctx.beginPath(); ctx.moveTo(x - 100, y - 70); ctx.lineTo(x + 100, y - 70); ctx.lineTo(x + 90, y - 22); ctx.quadraticCurveTo(x, y - 8, x - 90, y - 22); ctx.closePath(); ctx.fill(); ink(1.6); ctx.stroke();
+      ctx.fillStyle = PAL.ink; for (const dx of [-76, 76]) ctx.fillRect(x + dx - 4, y - 18, 8, 18);
+      ctx.fillStyle = PAL.greyLight; ctx.fillRect(x - 108, y - 110, 6, 40); ctx.fillRect(x - 108, y - 110, 24, 6);
+      break;
+    case 'mirror': box(x - 34, y - 46, 68, 92, '#d8e8f0', 2); ctx.fillStyle = PAL.white; ctx.fillRect(x - 20, y - 36, 6, 50); break;
+    case 'sink':
+      ctx.fillStyle = PAL.white; ctx.beginPath(); ctx.moveTo(x - 36, y - 80); ctx.lineTo(x + 36, y - 80); ctx.lineTo(x + 28, y - 60); ctx.lineTo(x - 28, y - 60); ctx.closePath(); ctx.fill(); ink(1.5); ctx.stroke();
+      ctx.fillStyle = PAL.greyLight; ctx.fillRect(x - 8, y - 60, 16, 60); ink(1.2); ctx.strokeRect(x - 8, y - 60, 16, 60);
+      break;
+    case 'easel':
+      ink(3); ctx.strokeStyle = PAL.wood;
+      ctx.beginPath(); ctx.moveTo(x - 50, y); ctx.lineTo(x, y - 190); ctx.lineTo(x + 50, y); ctx.moveTo(x, y - 190); ctx.lineTo(x + 6, y); ctx.stroke();
+      box(x - 60, y - 170, 120, 90, PAL.ink, 1);
+      ctx.strokeStyle = PAL.paper; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x - 40, y - 150); ctx.lineTo(x - 30, y - 158); ctx.lineTo(x - 30, y - 128); ctx.moveTo(x - 10, y - 156); ctx.lineTo(x + 6, y - 156); ctx.lineTo(x - 6, y - 130); ctx.stroke();
+      break;
+    case 'desk':
+      ctx.fillStyle = PAL.paper; ctx.fillRect(x - 46, y - 58, 92, 6); ink(1.4); ctx.strokeRect(x - 46, y - 58, 92, 6);
+      ctx.fillStyle = PAL.ink; ctx.fillRect(x - 42, y - 52, 3, 52); ctx.fillRect(x + 39, y - 52, 3, 52);
+      ctx.fillStyle = PAL.red; ctx.fillRect(x + 14, y - 64, 20, 6);
+      drawChair(x + 60, y, -1, PAL.ink);
+      break;
+    case 'wardrobe':
+      box(x - 42, y - 190, 84, 190, PAL.mint, 1.6); ink(1.4); ctx.beginPath(); ctx.moveTo(x, y - 190); ctx.lineTo(x, y); ctx.stroke();
+      ctx.fillStyle = PAL.ink; ctx.fillRect(x - 8, y - 104, 3, 14); ctx.fillRect(x + 5, y - 104, 3, 14);
+      break;
+    case 'pendant':
+      ink(1.2); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 60); ctx.stroke();
+      ctx.fillStyle = PAL.paper; ctx.beginPath(); ctx.arc(x, y + 76, 16, Math.PI, 0); ctx.closePath(); ctx.fill(); ink(1.4); ctx.stroke();
+      break;
+    case 'bed':
+      ctx.fillStyle = PAL.wood; ctx.fillRect(x - 120, y - 100, 10, 100); ctx.fillRect(x + 110, y - 70, 10, 70);
+      ctx.fillStyle = PAL.paper; ctx.fillRect(x - 110, y - 58, 220, 28);
+      ctx.fillStyle = PAL.red; ctx.fillRect(x - 40, y - 64, 150, 34);
+      ctx.fillStyle = PAL.white; ctx.beginPath(); ctx.roundRect(x - 106, y - 72, 54, 16, 7); ctx.fill(); ink(1.2); ctx.stroke();
+      ctx.fillStyle = PAL.wood; ctx.fillRect(x - 110, y - 30, 220, 10);
+      break;
+    case 'nightstand': box(x - 26, y - 50, 52, 50, PAL.wood, 1.2); ctx.fillStyle = PAL.ink; ctx.fillRect(x - 5, y - 30, 10, 3); break;
+    case 'boiler': {
+      ctx.fillStyle = PAL.greyLight; ctx.beginPath(); ctx.roundRect(x - 56, y - 180, 112, 180, [40, 40, 0, 0]); ctx.fill(); ink(1.6); ctx.stroke();
+      box(x - 22, y - 80, 44, 36, PAL.ink, 1.2);
+      const alt = Math.floor(st * 3) % 2;
+      ctx.fillStyle = PAL.red; ctx.beginPath(); ctx.moveTo(x - 20, y - 46);
+      for (let k = 0; k <= 5; k++) ctx.lineTo(x - 20 + k * 8, y - 46 - (k % 2 === alt ? 26 : 12));
+      ctx.lineTo(x + 20, y - 46); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = PAL.ink; ctx.fillRect(x - 4, y - 260, 8, 80);
+      break;
+    }
+    case 'boxes':
+      box(x - 60, y - 56, 70, 56, PAL.wood, 1.3); box(x + 10, y - 50, 56, 50, PAL.wood, 1.3); box(x - 34, y - 104, 70, 48, PAL.wood, 1.3);
+      ink(1); for (const [bx, by, bw] of [[-60, -56, 70], [10, -50, 56], [-34, -104, 70]]) { ctx.beginPath(); ctx.moveTo(x + bx + bw / 2, y + by); ctx.lineTo(x + bx + bw / 2, y + by + 14); ctx.stroke(); }
+      break;
+    case 'washer':
+      box(x - 42, y - 96, 84, 96, PAL.white, 1.6); circle(x, y - 44, 26, PAL.blue); circle(x, y - 44, 16, '#d8e8f0');
+      ctx.fillStyle = PAL.ink; ctx.fillRect(x - 32, y - 88, 18, 6);
+      break;
+    case 'jars':
+      ctx.fillStyle = PAL.wood; ctx.fillRect(t.x0, y, t.x1 - t.x0, 6);
+      for (let xx = t.x0 + 20, k = 0; xx < t.x1 - 10; xx += 36, k++) { box(xx - 11, y - 34, 22, 34, [PAL.yellow, PAL.red, PAL.mint][k % 3], 1.1); ctx.fillStyle = PAL.ink; ctx.fillRect(xx - 11, y - 40, 22, 6); }
+      break;
+    case 'redDoor':
+      box(x - 42, y - 170, 84, 170, PAL.red, 1.8); box(x - 30, y - 150, 26, 60, PAL.red, 1.2); box(x + 4, y - 150, 26, 60, PAL.red, 1.2);
+      circle(x + 26, y - 80, 4, PAL.yellow, false);
+      ctx.fillStyle = PAL.yellow; ctx.fillRect(x - 50, y - 4, 100, 4);
+      break;
+  }
+}
 function drawClam(c, frame) {
   const { x, y } = c;
-  ink();
+  ink(1.4);
+  ctx.fillStyle = PAL.paper;
   if (c.taken) {
-    ctx.fillStyle = PAL.paper;
-    ctx.beginPath(); ctx.arc(x, y, 26, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
-    for (const a of [0.2, 0.4, 0.6, 0.8]) { const t = Math.PI + a * Math.PI; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(t) * 26, y + Math.sin(t) * 26); ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(x, y, 18, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    for (const a of [0.25, 0.5, 0.75]) { const t = Math.PI + a * Math.PI; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(t) * 18, y + Math.sin(t) * 18); ctx.stroke(); }
     return;
   }
-  // lower shell as a tray, lid raised, pearl between
-  ctx.fillStyle = PAL.paper;
-  ctx.beginPath(); ctx.moveTo(x - 26, y - 8); ctx.lineTo(x + 26, y - 8); ctx.lineTo(x + 20, y); ctx.lineTo(x - 20, y); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x, y - 26, 26, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
-  for (const a of [0.2, 0.4, 0.6, 0.8]) { const t = Math.PI + a * Math.PI; ctx.beginPath(); ctx.moveTo(x, y - 26); ctx.lineTo(x + Math.cos(t) * 26, y - 26 + Math.sin(t) * 26); ctx.stroke(); }
-  ctx.fillStyle = PAL.white;
-  ctx.beginPath(); ctx.arc(x, y - 16, 7, 0, 7); ctx.fill(); ctx.stroke();
-  drawSplat(x, y - 74, 15, c.color, (frame % 8) * (Math.PI / 16) + c.phase);
-}
-function drawKelp(s, st) {
-  const lean = Math.sin(st * 0.9 + s.phase) * 10;
-  const topX = s.x + lean, topY = s.y - s.h;
-  ctx.strokeStyle = PAL.greenDark; ctx.lineWidth = 3; ctx.lineCap = 'butt';
-  ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(topX, topY); ctx.stroke();
-  ctx.fillStyle = PAL.green;
-  for (let y = 26, k = 0; y < s.h - 6; y += 24, k++) {
-    const u = y / s.h, px = s.x + lean * u, py = s.y - y, side = k % 2 ? 1 : -1;
-    ctx.save(); ctx.translate(px, py); ctx.rotate(side * -0.6);
-    ctx.beginPath(); ctx.ellipse(side * 13, 0, 13, 5, 0, 0, 7); ctx.fill();
-    ctx.restore();
-  }
-  ctx.beginPath(); ctx.ellipse(topX, topY - 6, 5, 9, 0, 0, 7); ctx.fill();
-}
-function drawUrchin(x, y) {
-  ink(1.2);
-  for (let i = 0; i < 18; i++) {
-    const a = Math.PI + (i / 17) * Math.PI;
-    ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * 10, y - 10 + Math.sin(a) * 10); ctx.lineTo(x + Math.cos(a) * 24, y - 10 + Math.sin(a) * 24); ctx.stroke();
-  }
-  ctx.fillStyle = PAL.ink;
-  ctx.beginPath(); ctx.arc(x, y - 10, 12, 0, 7); ctx.fill();
-}
-function drawCoral(s) {
-  // organ-pipe coral: a row of red tubes of stepped heights
-  const n = s.n, gap = 16, x0 = s.x - ((n - 1) * gap) / 2;
-  for (let k = 0; k < n; k++) {
-    const h = 40 + ((k * 37 + n * 11) % 5) * 14;
-    const x = x0 + k * gap;
-    ctx.fillStyle = PAL.red;
-    ctx.beginPath(); ctx.roundRect(x - 6, s.y - h, 12, h, [6, 6, 0, 0]); ctx.fill();
-    ctx.fillStyle = PAL.ink;
-    ctx.beginPath(); ctx.ellipse(x, s.y - h + 5, 3.5, 2, 0, 0, 7); ctx.fill();
-  }
-}
-function drawRock(s) {
-  ctx.fillStyle = TEX.rock;
-  ctx.beginPath(); ctx.roundRect(s.x - s.w / 2, s.y - s.h, s.w, s.h, [18, 18, 0, 0]); ctx.fill();
-}
-function drawHedge(s) {
-  ctx.fillStyle = TEX.hedge;
-  ctx.fillRect(s.x0, s.y - 30, s.x1 - s.x0, 30);
-  ink(1.4);
-  for (let x = s.x0 + 14; x < s.x1 - 8; x += 28) {   // small v marks along the base, like a planted border
-    ctx.beginPath(); ctx.moveTo(x - 4, s.y - 6); ctx.lineTo(x, s.y - 1); ctx.lineTo(x + 4, s.y - 6); ctx.stroke();
-  }
-}
-function drawVent(s, st) {
-  const x = s.x, y = s.y;
-  ctx.fillStyle = PAL.brick;
-  ctx.fillRect(x - 22, y - 80, 44, 80);
-  ink(1);
-  for (let r = 1; r < 8; r++) {
-    const yy = y - r * 10;
-    ctx.beginPath(); ctx.moveTo(x - 22, yy); ctx.lineTo(x + 22, yy); ctx.stroke();
-    for (let c = (r % 2 ? -11 : -22); c < 22; c += 22) { ctx.beginPath(); ctx.moveTo(x + c, yy); ctx.lineTo(x + c, yy + 10); ctx.stroke(); }
-  }
-  // flame-shaped plume on top, flipping between two drawings
-  ctx.fillStyle = PAL.red;
-  ctx.beginPath(); ctx.moveTo(x - 22, y - 80);
-  const alt = Math.floor(st * 3) % 2;
-  for (let k = 0; k <= 6; k++) ctx.lineTo(x - 22 + k * 7.3, y - 80 - (k % 2 === alt ? 16 : 5));
-  ctx.lineTo(x + 22, y - 80); ctx.closePath(); ctx.fill();
-}
-function drawStarfish(x, y) {
-  ctx.fillStyle = PAL.red;
-  ctx.beginPath();
-  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, r = i % 2 ? 4 : 11; ctx.lineTo(x + Math.cos(a) * r, y - 8 + Math.sin(a) * r * 0.7); }
-  ctx.closePath(); ctx.fill();
-}
-function drawPole(p) {
-  const x = p.x, bottom = groundAt(x), top = SURF - 150;
-  ctx.fillStyle = PAL.brown;
-  ctx.fillRect(x - 5, top, 10, bottom - top);
-  ctx.fillRect(x - 34, top + 16, 68, 6);
-  ctx.fillStyle = PAL.greyLight; ctx.fillRect(x - 30, top + 6, 6, 10); ctx.fillRect(x + 24, top + 6, 6, 10);
-  // a rung every metre, a numbered plate every five
-  ctx.font = '500 13px Jost, Futura, "Century Gothic", sans-serif';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  for (let m = 1; SURF + m * UNITS_PER_M < bottom - 6; m++) {
-    const y = SURF + m * UNITS_PER_M, side = m % 2 ? 1 : -1;
-    ctx.fillStyle = PAL.ink;
-    ctx.fillRect(side > 0 ? x + 5 : x - 13, y - 1, 8, 2.5);
-    if (m % 5 === 0) {
-      ctx.fillStyle = PAL.paper; ctx.fillRect(x + 12, y - 9, 34, 18);
-      ink(1.2); ctx.strokeRect(x + 12, y - 9, 34, 18);
-      ctx.fillStyle = PAL.ink; ctx.fillText(`${m} m`, x + 15, y + 1);
-    }
-  }
-}
-function drawBoat(st) {
-  const x = boat.x, y = SURF + (Math.floor(st * 2) % 2 ? 1.5 : 0);
-  ctx.fillStyle = PAL.red;
-  ctx.beginPath(); ctx.moveTo(x - 120, y - 16); ctx.lineTo(x + 120, y - 16); ctx.lineTo(x + 96, y + 20); ctx.lineTo(x - 96, y + 20); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = PAL.paper; ctx.fillRect(x - 120, y - 20, 240, 5);
-  // cabin with a grid of window panes
-  ctx.fillStyle = PAL.cream; ctx.fillRect(x - 60, y - 70, 110, 50);
-  ctx.fillStyle = PAL.brown; ctx.fillRect(x - 68, y - 78, 126, 9);
-  ink(1.2);
-  for (const wx of [x - 48, x - 8]) {
-    ctx.fillStyle = PAL.white; ctx.fillRect(wx, y - 60, 30, 26); ctx.strokeRect(wx, y - 60, 30, 26);
-    ctx.fillStyle = PAL.ink; ctx.fillRect(wx + 14, y - 60, 2, 26); ctx.fillRect(wx, y - 48, 30, 2);
-  }
-  ctx.fillStyle = PAL.brown; ctx.fillRect(x + 70, y - 130, 5, 114);
-  ctx.fillStyle = PAL.yellow; ctx.fillRect(x + 75, y - 128, 26, 16);
-  // anchor line straight down
-  ctx.setLineDash([6, 6]); ink(1.2);
-  ctx.beginPath(); ctx.moveTo(x - 90, y + 14); ctx.lineTo(x - 90, groundAt(x - 90) - 8); ctx.stroke();
-  ctx.setLineDash([]);
-}
-function drawPlane(t) {
-  const x = ((t * 22) % (W + 400)) - 200, y = 44;
-  ctx.fillStyle = PAL.ink;
-  ctx.beginPath(); ctx.ellipse(x, y, 30, 4.5, 0, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(x - 4, y); ctx.lineTo(x - 16, y - 14); ctx.lineTo(x - 8, y - 14); ctx.lineTo(x + 8, y); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(x - 24, y); ctx.lineTo(x - 32, y - 10); ctx.lineTo(x - 27, y - 10); ctx.lineTo(x - 18, y); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 19, y - 6); ctx.lineTo(x + 19, y - 6); ctx.lineTo(x + 14, y); ctx.lineTo(x - 14, y); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y - 19, 19, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+  for (const a of [0.25, 0.5, 0.75]) { const t = Math.PI + a * Math.PI; ctx.beginPath(); ctx.moveTo(x, y - 19); ctx.lineTo(x + Math.cos(t) * 19, y - 19 + Math.sin(t) * 19); ctx.stroke(); }
+  circle(x, y - 12, 5.5, PAL.white);
+  drawSplat(x, y - 56, 12, c.color, (frame % 8) * (Math.PI / 16) + c.phase);
 }
 function drawFish(x, y, kind, face, flick) {
   const L = kind.len, h = L * 0.42;
@@ -622,10 +654,10 @@ function drawFish(x, y, kind, face, flick) {
   ctx.restore();
 }
 function drawJelly(j) {
-  const r = 22 * j.s;
+  const r = 20 * j.s;
   ink(1.3);
   for (let k = -2; k <= 2; k++) {
-    const len = (k % 2 ? 36 : 48) * j.s;
+    const len = (k % 2 ? 32 : 44) * j.s;
     ctx.beginPath(); ctx.moveTo(j.x + k * r * 0.36, j.y); ctx.lineTo(j.x + k * r * 0.36, j.y + len); ctx.stroke();
   }
   ctx.fillStyle = j.color;
@@ -637,126 +669,105 @@ function drawDiver(frame, moving) {
   ctx.save();
   ctx.translate(diver.x, diver.y);
   ctx.scale(diver.face, 1);
-  // legs and flippers
   for (const [oy, swing] of [[-3, 0.1 + k * 0.15], [4, -0.06 - k * 0.15]]) {
-    ctx.save(); ctx.translate(-26, oy); ctx.rotate(swing);
-    ctx.fillStyle = PAL.ink; ctx.fillRect(-34, -4, 36, 8);
-    ctx.beginPath(); ctx.moveTo(-32, -3); ctx.lineTo(-56, -12); ctx.lineTo(-54, 8); ctx.closePath(); ctx.fill();
+    ctx.save(); ctx.translate(-22, oy); ctx.rotate(swing);
+    ctx.fillStyle = PAL.ink; ctx.fillRect(-28, -3.5, 30, 7);
+    ctx.beginPath(); ctx.moveTo(-26, -3); ctx.lineTo(-46, -10); ctx.lineTo(-44, 7); ctx.closePath(); ctx.fill();
     ctx.restore();
   }
-  // tank
-  ctx.fillStyle = PAL.greyLight; ctx.fillRect(-26, -22, 40, 11);
-  ink(1.2); ctx.strokeRect(-26, -22, 40, 11);
-  // body in a red suit
-  ctx.fillStyle = PAL.red;
-  ctx.beginPath(); ctx.roundRect(-30, -11, 58, 22, 10); ctx.fill();
-  ctx.fillStyle = PAL.ink; ctx.fillRect(-6, -11, 3, 22);
-  // arm
-  ctx.save(); ctx.translate(16, 4); ctx.rotate(0.3 - k * 0.1); ctx.fillStyle = PAL.red; ctx.fillRect(0, -3.5, 22, 7);
-  ctx.fillStyle = PAL.cream; ctx.beginPath(); ctx.arc(24, 0, 4.5, 0, 7); ctx.fill(); ctx.restore();
-  // head, hood and mask
-  ctx.fillStyle = PAL.cream; ctx.beginPath(); ctx.arc(36, -6, 11, 0, 7); ctx.fill();
-  ctx.fillStyle = PAL.ink; ctx.beginPath(); ctx.arc(34, -8, 11.5, Math.PI * 0.9, Math.PI * 1.95); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = PAL.blue; ctx.fillRect(38, -12, 11, 8);
-  ink(1.2); ctx.strokeRect(38, -12, 11, 8);
+  ctx.fillStyle = PAL.greyLight; ctx.fillRect(-22, -19, 34, 9); ink(1.1); ctx.strokeRect(-22, -19, 34, 9);
+  ctx.fillStyle = PAL.red; ctx.beginPath(); ctx.roundRect(-25, -10, 48, 19, 9); ctx.fill();
+  ctx.fillStyle = PAL.ink; ctx.fillRect(-5, -10, 3, 19);
+  ctx.save(); ctx.translate(13, 3); ctx.rotate(0.3 - k * 0.1); ctx.fillStyle = PAL.red; ctx.fillRect(0, -3, 19, 6);
+  ctx.fillStyle = PAL.cream; ctx.beginPath(); ctx.arc(21, 0, 4, 0, 7); ctx.fill(); ctx.restore();
+  ctx.fillStyle = PAL.cream; ctx.beginPath(); ctx.arc(30, -5, 9.5, 0, 7); ctx.fill();
+  ctx.fillStyle = PAL.ink; ctx.beginPath(); ctx.arc(28.5, -7, 10, Math.PI * 0.9, Math.PI * 1.95); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = PAL.blue; ctx.fillRect(32, -10, 9, 7); ink(1.1); ctx.strokeRect(32, -10, 9, 7);
   ctx.restore();
+}
+
+// the outside: sky, stippled clouds, a plane, a telephone pole, the lawn and a picket gate
+const clouds = [{ x: 420, y: 150 }, { x: 1700, y: 110 }, { x: 2350, y: 220 }].map((c) => ({ ...c, parts: Array.from({ length: 5 }, (_, k) => ({ dx: k * 32 - 64 + rr(-6, 6), dy: rr(-8, 8), rx: rr(36, 56), ry: rr(12, 18) })) }));
+function drawOutside(t) {
+  ctx.fillStyle = PAL.sky; ctx.fillRect(0, 0, W, GROUND);
+  ctx.fillStyle = TEX.cloud;
+  for (const c of clouds) { ctx.beginPath(); for (const p of c.parts) { ctx.moveTo(c.x + p.dx + p.rx, c.y + p.dy); ctx.ellipse(c.x + p.dx, c.y + p.dy, p.rx, p.ry, 0, 0, 7); } ctx.fill(); }
+  const px = ((t * 18) % (W + 300)) - 150;
+  ctx.fillStyle = PAL.ink;
+  ctx.beginPath(); ctx.ellipse(px, 70, 24, 3.5, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(px - 3, 70); ctx.lineTo(px - 13, 59); ctx.lineTo(px - 7, 59); ctx.lineTo(px + 6, 70); ctx.fill();
+  // telephone pole
+  ctx.fillStyle = PAL.brown; ctx.fillRect(96, 180, 12, GROUND - 180); ctx.fillRect(66, 204, 72, 6);
+  ctx.fillStyle = PAL.ink; for (let y = 320; y < GROUND - 60; y += 70) { ctx.fillRect(84, y, 12, 3); ctx.fillRect(108, y + 35, 12, 3); }
+  // lawn and picket gate
+  ctx.fillStyle = TEX.lawn; ctx.fillRect(0, GROUND, W, H - GROUND);
+  ctx.fillStyle = PAL.white;
+  for (let k = 0; k < 6; k++) { const x = 2440 + k * 22; ctx.beginPath(); ctx.moveTo(x, GROUND); ctx.lineTo(x, GROUND - 70); ctx.lineTo(x + 7, GROUND - 80); ctx.lineTo(x + 14, GROUND - 70); ctx.lineTo(x + 14, GROUND); ctx.fill(); }
+  ctx.fillRect(2436, GROUND - 56, 136, 7); ctx.fillRect(2436, GROUND - 26, 136, 7);
+}
+function drawShell(st) {
+  // roof, chimney with flames, attic gable
+  ctx.fillStyle = PAL.roof;
+  ctx.beginPath(); ctx.moveTo(150, 410); ctx.lineTo(1300, 90); ctx.lineTo(2450, 410); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.clip();
+  ctx.fillStyle = PAL.roofLine;
+  for (let y = 110; y < 410; y += 22) ctx.fillRect(0, y, W, 2);
+  ctx.restore();
+  ctx.fillStyle = PAL.trim; ctx.beginPath(); ctx.moveTo(150, 410); ctx.lineTo(1300, 90); ctx.lineTo(2450, 410); ctx.lineTo(2450, 400); ctx.lineTo(1300, 78); ctx.lineTo(150, 400); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = PAL.red; ctx.fillRect(1760, 150, 90, 120);
+  ink(1); for (let y = 170; y < 270; y += 18) { ctx.beginPath(); ctx.moveTo(1760, y); ctx.lineTo(1850, y); ctx.stroke(); }
+  const alt = Math.floor(st * 3) % 2;
+  ctx.fillStyle = PAL.red; ctx.beginPath(); ctx.moveTo(1760, 150);
+  for (let k = 0; k <= 8; k++) ctx.lineTo(1760 + k * 11.25, 150 - (k % 2 === alt ? 34 : 12));
+  ctx.lineTo(1850, 150); ctx.closePath(); ctx.fill();
+  // outer walls with siding, slabs, interior walls
+  for (const x of [200, 2376]) {
+    ctx.fillStyle = PAL.siding; ctx.fillRect(x, 400, 24, 1300);
+    ctx.fillStyle = PAL.sidingLine; for (let y = 412; y < 1700; y += 12) ctx.fillRect(x, y, 24, 1.5);
+  }
+  ctx.fillStyle = PAL.siding;
+  for (const s of SLABS) { ctx.fillRect(224, s.y, s.hatch[0] - 224, 24); ctx.fillRect(s.hatch[1], s.y, 2376 - s.hatch[1], 24); }
+  for (const w of WALLS) ctx.fillRect(w.x, w.y0, 18, w.y1 - w.y0 - DOOR_H);
+  ctx.fillStyle = PAL.trim;
+  for (const s of SLABS) { ctx.fillRect(224, s.y + 24, s.hatch[0] - 224, 4); ctx.fillRect(s.hatch[1], s.y + 24, 2376 - s.hatch[1], 4); }
+  for (const w of WALLS) ctx.fillRect(w.x - 4, w.y1 - DOOR_H, 26, 6);   // door lintels
+  ctx.fillStyle = '#c9c1ab'; ctx.fillRect(200, 1672, 2200, 28);            // foundation
+  ink(1.5);
+  ctx.strokeRect(200, 400, 2200, 1300);
 }
 
 function render(t, frame, st) {
   const dpr = view.dpr, sc = view.scale;
   ctx.setTransform(dpr * sc, 0, 0, dpr * sc, -view.x * dpr * sc, -view.y * dpr * sc);
-  const x0 = view.x - 30, x1 = view.x + view.w + 30, yb = view.y + view.h + 30;
-
-  // sky, stippled clouds, a plane
-  if (view.y < SURF) {
-    ctx.fillStyle = PAL.sky;
-    ctx.fillRect(x0, view.y - 10, x1 - x0, SURF - view.y + 10);
-    ctx.fillStyle = TEX.cloud;
-    for (const c of clouds) {
-      if (c.x < x0 - 200 || c.x > x1 + 200) continue;
-      ctx.beginPath();
-      for (const p of c.parts) { ctx.moveTo(c.x + p.dx + p.rx, c.y + p.dy); ctx.ellipse(c.x + p.dx, c.y + p.dy, p.rx, p.ry, 0, 0, 7); }
-      ctx.fill();
-    }
-    drawPlane(t);
-  }
-
-  // water in straight bands, ruled like siding
-  for (let k = 0; k < WATER.length; k++) {
-    const top = SURF + k * WATER_BAND, bot = k === WATER.length - 1 ? H + 40 : top + WATER_BAND;
-    if (bot < view.y || top > yb) continue;
-    ctx.fillStyle = WATER[k];
-    ctx.fillRect(x0, top, x1 - x0, bot - top);
-  }
-  ctx.fillStyle = 'rgba(30, 60, 80, 0.07)';
-  for (let y = SURF + 22; y < Math.min(yb, H); y += 22) if (y > view.y - 2) ctx.fillRect(x0, y, x1 - x0, 1.2);
-  ink(1.4);
-  ctx.beginPath(); ctx.moveTo(x0, SURF); ctx.lineTo(x1, SURF); ctx.stroke();
-
-  for (const p of poles) if (p.x > x0 - 60 && p.x < x1 + 60) drawPole(p);
-
-  // the stepped seabed
-  const c0 = clamp(Math.floor(x0 / COL), 0, NCOL - 1), c1 = clamp(Math.ceil(x1 / COL), 0, NCOL - 1);
-  const stairs = () => {
-    ctx.beginPath();
-    ctx.moveTo(c0 * COL, H + 40);
-    for (let i = c0; i <= c1; i++) { ctx.lineTo(i * COL, steps[i]); ctx.lineTo((i + 1) * COL, steps[i]); }
-    ctx.lineTo((c1 + 1) * COL, H + 40); ctx.closePath();
-  };
-  stairs(); ctx.fillStyle = PAL.cream; ctx.fill();
-  ctx.save(); stairs(); ctx.clip();
-  ctx.fillStyle = 'rgba(120, 100, 70, 0.14)';
-  for (let y = Math.floor(view.y / RISE) * RISE + RISE; y < yb; y += RISE) ctx.fillRect(x0, y + 12, x1 - x0, 1.2);
-  ctx.setLineDash([3, 5]); ctx.strokeStyle = 'rgba(120, 100, 70, 0.3)'; ctx.lineWidth = 1;
-  for (let i = c0; i <= c1 + 1; i++) { ctx.beginPath(); ctx.moveTo(i * COL, steps[clamp(i, 0, NCOL - 1)] + 12); ctx.lineTo(i * COL, yb); ctx.stroke(); }
-  ctx.setLineDash([]);
-  // a beige tread band just under each step's top edge
-  ctx.fillStyle = PAL.beige;
-  for (let i = c0; i <= c1; i++) ctx.fillRect(i * COL, steps[i], COL, 8);
-  ctx.restore();
-  ink(1.4);
-  ctx.beginPath();
-  for (let i = c0; i <= c1; i++) { ctx.lineTo(i * COL, steps[i]); ctx.lineTo((i + 1) * COL, steps[i]); }
-  ctx.stroke();
-
-  // things on the steps
-  for (const s of scenery) {
-    const sx = s.x ?? s.x0;
-    if (sx < x0 - 200 || sx > x1 + 200) continue;
-    if (s.type === 'kelp') drawKelp(s, st);
-    else if (s.type === 'urchin') drawUrchin(s.x, s.y);
-    else if (s.type === 'coral') drawCoral(s);
-    else if (s.type === 'rock') drawRock(s);
-    else if (s.type === 'hedge') drawHedge(s);
-    else if (s.type === 'vent') drawVent(s, st);
-    else if (s.type === 'star') drawStarfish(s.x, s.y);
-  }
-  for (const c of clams) if (c.x > x0 - 60 && c.x < x1 + 60) drawClam(c, frame);
-
-  // creatures
-  for (const j of jellies) if (j.x > x0 - 60 && j.x < x1 + 60) drawJelly(j);
-  for (const s of schools) {
-    const flick = frame % 2 ? 2 : -2;
-    for (const m of s.members) if (m.x > x0 - 60 && m.x < x1 + 60) drawFish(m.x, m.y, s.kind, s.dir, flick);
-  }
+  drawOutside(t);
+  for (const r of ROOMS) drawWallpaper(r);
+  for (const s of splats) drawSplat(s.x, s.y, s.r, s.color, s.rot);
+  for (const th of things) drawThing(th, st);
+  for (const c of clams) drawClam(c, frame);
+  // the flood: one even tint over every room below the water line
+  ctx.fillStyle = WATER_TINT;
+  for (const r of ROOMS) { const top = Math.max(r.y0, WL); if (top < r.y1) ctx.fillRect(r.x0, top, r.x1 - r.x0, r.y1 - top); }
+  for (const s of SLABS) ctx.fillRect(s.hatch[0], s.y, s.hatch[1] - s.hatch[0], 24);
+  for (const w of WALLS) ctx.fillRect(w.x, w.y1 - DOOR_H, 18, DOOR_H);
+  ink(1.4); ctx.beginPath(); ctx.moveTo(224, WL); ctx.lineTo(2376, WL); ctx.stroke();
+  ctx.fillStyle = PAL.ink;
+  for (let x = 250; x < 2360; x += 36) { ctx.beginPath(); ctx.moveTo(x - 4, WL + 6); ctx.lineTo(x, WL + 11); ctx.lineTo(x + 4, WL + 6); ctx.strokeStyle = PAL.ink; ctx.lineWidth = 1.2; ctx.stroke(); }
+  drawShell(st);
+  for (const j of jellies) drawJelly(j);
+  const flick = frame % 2 ? 2 : -2;
+  for (const s of schools) for (const m of s.members) drawFish(m.x, m.y, s.kind, s.dir, flick);
   if (game.state === 'play') drawDiver(frame, Math.hypot(diver.vx, diver.vy) > 40);
-  ink(1.1);
-  ctx.fillStyle = PAL.white;
-  for (const b of bubbles) {
-    if (b.x < x0 || b.x > x1) continue;
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.stroke();
-  }
+  ink(1); ctx.fillStyle = PAL.white;
+  for (const b of bubbles) { ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); ctx.stroke(); }
   if (diver.target && game.state === 'play') {
     ink(1.4);
     const { x, y } = diver.target;
-    ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); ctx.moveTo(x, y - 7); ctx.lineTo(x, y + 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.moveTo(x, y - 6); ctx.lineTo(x, y + 6); ctx.stroke();
   }
-  drawBoat(st);
-
-  // pencil grain over everything, fixed to the screen like the page itself
+  // pencil grain, fixed to the screen like the page itself
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'multiply';
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = 0.35;
   ctx.fillStyle = grain;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.globalAlpha = 1;
@@ -765,18 +776,19 @@ function render(t, frame, st) {
 
 // ---------- camera ---------------------------------------------------------
 function updateCamera(dt, tx, ty) {
-  const cx = clamp(tx - view.w / 2, 0, Math.max(0, W - view.w));
-  const cy = clamp(ty - view.h * 0.45, -20, Math.max(-20, H - view.h));
+  const cx = clamp(tx - view.w / 2, Math.min(0, W - view.w), Math.max(0, W - view.w));
+  const cy = clamp(ty - view.h * 0.45, 0, Math.max(0, H - view.h));
   const k = Math.min(1, dt * 3);
   view.x = lerp(view.x, cx, k);
   view.y = lerp(view.y, cy, k);
 }
 
 // ---------- main loop ---------------------------------------------------------
-let last = performance.now(), t = 0, ventTimer = 0, menuX = 900;
+let last = performance.now(), t = 0, menuT = 0;
 resetGame();
-view.x = clamp(diver.x - view.w / 2, 0, W - view.w);
-view.y = clamp(diver.y - view.h * 0.45, -20, H - view.h);
+view.x = clamp(diver.x - view.w / 2, 0, Math.max(0, W - view.w));
+view.y = clamp(diver.y - view.h * 0.45, 0, Math.max(0, H - view.h));
+const MENU_PATH = [[900, 420], [1500, 900], [700, 1200], [1500, 1500], [1300, 600]];
 
 function frameLoop(now) {
   const dt = clamp((now - last) / 1000, 0, 0.05);
@@ -792,18 +804,14 @@ function frameLoop(now) {
     updateHUD(dt);
     updateCamera(dt, diver.x, diver.y);
   } else {
-    // drift slowly along the lagoon behind the menu
-    menuX += dt * 40;
-    if (menuX > W - 700) menuX = 900;
-    updateCamera(dt, menuX, SURF + 300);
+    // wander slowly from room to room behind the menu
+    menuT += dt * 0.04;
+    const i = Math.floor(menuT) % MENU_PATH.length, f = menuT % 1, a = MENU_PATH[i], b = MENU_PATH[(i + 1) % MENU_PATH.length];
+    const e = f * f * (3 - 2 * f);
+    updateCamera(dt, lerp(a[0], b[0], e), lerp(a[1], b[1], e));
   }
   updateFish(dt, game.state === 'play' ? diver : { x: -9999, y: -9999 });
   for (const j of jellies) { j.x = j.hx; j.y = j.hy + (frame % 4 < 2 ? -5 : 5); }
-  ventTimer -= dt;
-  if (ventTimer <= 0) {
-    ventTimer = 0.35;
-    for (const v of vents) spawnBubble(v.x + rr(-10, 10), v.y, rr(3, 6));
-  }
   updateBubbles(dt);
   render(t, frame, st);
   requestAnimationFrame(frameLoop);
@@ -811,4 +819,4 @@ function frameLoop(now) {
 requestAnimationFrame(frameLoop);
 
 // exposed for tinkering from the console
-window.blueHollow = { diver, game, clams, jellies, schools, groundAt };
+window.deepHouse = { diver, game, clams, jellies, schools };
