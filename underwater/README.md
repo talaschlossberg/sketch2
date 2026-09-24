@@ -1,35 +1,40 @@
 # Deep House
 
-A dive through a flooded house, seen as a cut-open elevation, drawn with the 2D canvas
-(no libraries, no build step).
+A flooded house with doors to other places. It isn't a game: there's no air, clock or score.
+Swim around the house, then swim into one of the glowing openings to go somewhere else.
+Drawn with the 2D canvas (no libraries, no build step).
 
 Open `index.html` through any local web server, for example:
 
     python3 -m http.server
     # then visit http://localhost:8000/underwater/
 
-## Goal
-Twenty clams sit on the house's chairs, desks and shelves, each holding a pearl. Collect them all
-before your air runs out. The only air left is a pocket under the roof in the attic; each pearl
-adds 10% air and jellyfish stings cost 12%.
+## Places
+1. **The House**: a cut-open house full of water, seen from the side. You float.
+2. **The Dune** (through the red door in the hall): pink desert dunes with monoliths, a huge
+   sun and rolling tumbleweeds. You walk and jump.
+3. **The Snowfield** (through the classroom wardrobe): seen from above. You leave footprints,
+   and you slide on the frozen pond.
+4. **The Night Sky** (through the round attic window): stars, a moon, comets and floating
+   islands. You drift, and nearby stars join up to you like a constellation.
+5. **The Grandstand** (through the parlor painting): huge grey bleachers scattered with
+   briefcases above a yellow fog. The steps carry you up as you walk.
+
+Every place has a door, window or frame that leads back to the house.
 
 ## Controls
-- Arrow keys, or the arrow pad on screen: swim
-- Click or tap: swim to that spot, or to a clam
+- Arrow keys, or the arrow pad on screen: move (↑ jumps where there's ground)
+- Click or tap: go to that spot
 
-When the game sits inside another page (an embed or a viewer), the keyboard only reaches it while
-it has focus. The game takes focus when you start or click the house, and shows "Click the house
-to use your arrow keys" whenever focus has moved elsewhere. The on-screen pad always works.
+When the page sits inside another page (an embed or a viewer), the keyboard only reaches it
+while it has focus. It takes focus when you start or click, and shows "Click the house to use
+your arrow keys" whenever focus has moved elsewhere. The on-screen pad always works.
 
-## The house
-Attic (air pocket, a row of folding chairs), parlor, kitchen, bathroom, classroom, bedroom,
-boiler cellar, and a hall of chairs facing a red door that opens onto nothing. Floors connect
-through ladder hatches, and rooms through doorways.
+## Look
+Flat colour and thin ink lines, printed lo-fi: the scene is drawn at reduced resolution, printed
+a second time slightly out of register, and covered with flickering grain and paper fibres.
+Ambient motion moves in small flip-book steps. Every shape is drawn in code; no image files.
 
-## Art direction
-Straight-on elevation, flat colour, thin ink lines, things set out in rows, stippled clouds and
-lawn, a light colored-pencil grain, and ambient motion in small flip-book steps. The interface
-follows a mid-century primer: a red number square and thin outlined cards. Every shape is drawn
-in code; the game uses no image files.
-
-`window.deepHouse` exposes the diver, game state, clams, fish and jellyfish for tinkering in the console.
+Each place lives in its own block in `main.js` (`HOUSE`, `DUNE`, `SNOW`, `NIGHT`, `STAND`) with its
+own palette, movement mode (`float`, `walk` or `top`) and portals. `window.deepHouse.go('dune')`
+jumps to a place from the console.

@@ -25,36 +25,20 @@
   #game canvas { display: block; cursor: pointer; }
   #game canvas:focus { outline: none; }
 
-  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; border: 18px solid var(--red); transition: opacity 0.6s ease-out; }
-  #flash.on { opacity: 0.9; transition: none; }
-
-  /* HUD: a row of primer cards */
-  .hud { position: fixed; pointer-events: none; font-variant-numeric: tabular-nums; }
-  #cards { top: calc(14px + env(safe-area-inset-top, 0px)); left: 14px; right: 14px;
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+  /* a small primer label naming the world you're in */
+  .hud { position: fixed; pointer-events: none; }
+  #where { left: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: stretch; background: var(--paper); border: 2px solid var(--red); border-radius: 10px; overflow: hidden; }
+  #where b { background: var(--red); color: var(--paper); font-size: 24px; font-weight: 500; width: 44px; display: grid; place-items: center; }
+  #where span { padding: 8px 14px; font-size: 15px; font-weight: 500; letter-spacing: 0.06em; align-self: center; }
   .num { width: 64px; height: 64px; background: var(--red); color: var(--paper); display: grid; place-content: center; text-align: center; }
   .num b { font-size: 34px; font-weight: 500; line-height: 1; }
-  .num small { font-size: 11px; letter-spacing: 0.08em; }
-  .box { background: var(--paper); border: 2px solid var(--red); border-radius: 10px; padding: 7px 12px; box-sizing: border-box;
-    display: grid; align-content: center; gap: 3px; min-height: 64px; }
-  .box .k { font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; }
-  .box .v { font-size: 22px; font-weight: 500; line-height: 1; }
-  .box .v small { font-size: 12px; margin-left: 2px; }
-  #o2 { width: 150px; }
-  #o2 .bar { height: 10px; border: 1.5px solid var(--ink); }
-  #o2Fill { height: 100%; width: 100%; background: var(--blue); transform-origin: left; }
-  #o2.low { border-color: var(--ink); }
-  #o2.low #o2Fill { background: var(--red); animation: blink 0.8s steps(2) infinite; }
-  @keyframes blink { 50% { opacity: 0.3; } }
-  #sonar { grid-template-columns: auto auto; align-items: center; column-gap: 8px; }
-  #sonar svg { width: 38px; height: 38px; grid-row: span 2; }
 
-  #toast { left: 50%; top: 30%; transform: translateX(-50%); font-size: 15px; font-weight: 500; letter-spacing: 0.08em;
-    background: var(--paper); border: 2px solid var(--ink); padding: 8px 16px; opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
+  #toast { left: 50%; top: calc(16px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); font-size: 15px; font-weight: 500; letter-spacing: 0.03em;
+    background: var(--paper); border: 2px solid var(--ink); padding: 8px 16px; opacity: 0; transition: opacity 0.4s; width: max-content; max-width: calc(100% - 32px); text-align: center; box-sizing: border-box; }
   #toast.on { opacity: 1; }
   #focusHint { left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); font-size: 14px; font-weight: 500;
     background: var(--red); color: var(--paper); padding: 8px 14px; border-radius: 6px; white-space: nowrap; }
-  @media (max-width: 560px) { #focusHint { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } }
+  @media (max-width: 560px) { #focusHint { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } #where { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } }
 
   /* arrow pad */
   #pad { position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
@@ -93,28 +77,14 @@
   @media (max-width: 560px) {
     .legend { grid-template-columns: repeat(2, 1fr); }
     .panel { padding: 20px 18px 22px; }
-    #o2 { width: 120px; }
-    .box .v { font-size: 18px; }
   }
 </style>
 </head>
 <body>
 <div id="game"></div>
-<div id="flash"></div>
 
 <div id="hudRoot" hidden>
-  <div id="cards" class="hud">
-    <div class="num"><b id="hPearls">0</b><small id="hPearlsOf">of 20</small></div>
-    <div class="box"><span class="k">Depth</span><span class="v" id="hDepth">0<small>m</small></span></div>
-    <div class="box" id="o2"><span class="k">Air <span id="o2Val">100%</span></span><div class="bar"><div id="o2Fill"></div></div></div>
-    <div class="box" id="sonar">
-      <svg viewBox="-20 -20 40 40" aria-hidden="true">
-        <circle r="17" fill="none" stroke="#1e1e1e" stroke-width="2"/>
-        <g id="sonarArrow"><path d="M0,-14 L6,2 L0,-2 L-6,2 Z" fill="#e2552d"/></g>
-      </svg>
-      <span class="k">Pearl</span><span class="v" id="sonarDist">--</span>
-    </div>
-  </div>
+  <div id="where" class="hud"><b id="worldNum">1</b><span id="worldName">The House</span></div>
   <div id="toast" class="hud"></div>
   <div id="focusHint" class="hud" hidden>Click the house to use your arrow keys</div>
   <div id="pad" aria-label="Swim controls">
@@ -128,40 +98,29 @@
 <div id="startScreen" class="screen">
   <div class="panel">
     <div class="head">
-      <div class="num"><b>20</b></div>
-      <div><p class="eyebrow">A flooded house</p><h1>Deep House</h1></div>
+      <div class="num"><b>5</b></div>
+      <div><p class="eyebrow">A flooded house with doors</p><h1>Deep House</h1></div>
     </div>
-    <p>The house is full of water. Twenty clams are sitting on its chairs, desks and shelves, each holding a pearl. Collect them all before your air runs out.</p>
+    <p>The house is full of water, and four things in it open onto somewhere else entirely: a dune, a snowfield, a night sky and a grandstand. Nothing to win and nothing to lose. Just look around.</p>
     <ul class="legend">
       <li>
         <svg viewBox="0 0 64 48" aria-hidden="true"><rect x="22" y="4" width="20" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><path d="M32 8 L37 16 L27 16 Z" fill="#1e1e1e"/><rect x="4" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><rect x="24" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/><rect x="44" y="28" width="16" height="16" rx="3" fill="none" stroke="#1e1e1e" stroke-width="2"/></svg>
         <b>Swim</b><span>Arrow keys, or click where to go</span>
       </li>
       <li>
-        <svg viewBox="0 0 64 48" aria-hidden="true"><path d="M8 40 A24 24 0 0 1 56 40 Z" fill="#f4efe3" stroke="#1e1e1e" stroke-width="2"/><path d="M32 40 L14 22 M32 40 L24 17 M32 40 L32 16 M32 40 L40 17 M32 40 L50 22" stroke="#1e1e1e" stroke-width="1.5"/><circle cx="32" cy="33" r="6" fill="#fff" stroke="#1e1e1e" stroke-width="2"/><path d="M50 4 l2 5 5 -2 -2 5 5 2 -5 2 2 5 -5 -2 -2 5 -2 -5 -5 2 2 -5 -5 -2 5 -2 -2 -5 5 2 Z" fill="#e2552d"/></svg>
-        <b>Collect</b><span>Pearls from the clams</span>
+        <svg viewBox="0 0 64 48" aria-hidden="true"><rect x="18" y="4" width="28" height="42" fill="#bcd2e8" stroke="#1e1e1e" stroke-width="2"/><path d="M18 18 H46 M18 30 H46" stroke="#e8c547" stroke-width="5"/><rect x="12" y="2" width="40" height="46" fill="none" stroke="#e2552d" stroke-width="2" stroke-dasharray="5 4"/></svg>
+        <b>Go through</b><span>Swim into a glowing door or window</span>
       </li>
       <li>
-        <svg viewBox="0 0 64 48" aria-hidden="true"><path d="M16 22 A16 16 0 0 1 48 22 Z" fill="#e3a9a4" stroke="#1e1e1e" stroke-width="2"/><path d="M20 22 V44 M26 22 V40 M32 22 V45 M38 22 V40 M44 22 V44" stroke="#1e1e1e" stroke-width="1.5"/></svg>
-        <b>Avoid</b><span>Jellyfish sting your air</span>
+        <svg viewBox="0 0 64 48" aria-hidden="true"><rect x="0" y="0" width="64" height="16" fill="#f3c3a6"/><path d="M0 30 Q16 20 32 28 T64 26 V48 H0 Z" fill="#e9b67f"/><rect x="40" y="8" width="8" height="22" fill="#2a2320"/><circle cx="16" cy="10" r="6" fill="#fbf1dc"/></svg>
+        <b>Walk</b><span>Some places have ground; ↑ jumps</span>
       </li>
       <li>
-        <svg viewBox="0 0 64 48" aria-hidden="true"><path d="M4 26 L32 4 L60 26 Z" fill="#6b5a4e"/><rect x="8" y="26" width="48" height="20" fill="#bcd2e8" stroke="#1e1e1e" stroke-width="2"/><path d="M8 32 H56" stroke="#1e1e1e" stroke-width="1.5"/><circle cx="32" cy="15" r="4" fill="#bcd2e8" stroke="#1e1e1e" stroke-width="1.5"/></svg>
-        <b>Breathe</b><span>There's air up in the attic</span>
+        <svg viewBox="0 0 64 48" aria-hidden="true"><path d="M4 26 L32 4 L60 26 Z" fill="#6b5a4e"/><rect x="8" y="26" width="48" height="20" fill="#bcd2e8" stroke="#1e1e1e" stroke-width="2"/><path d="M8 32 H56" stroke="#1e1e1e" stroke-width="1.5"/></svg>
+        <b>Come back</b><span>Every place has a way home</span>
       </li>
     </ul>
-    <button class="go" id="startBtn" type="button">Dive in</button>
-  </div>
-</div>
-
-<div id="endScreen" class="screen" hidden>
-  <div class="panel">
-    <div class="head">
-      <div class="num"><b id="endNum">0</b></div>
-      <div><p class="eyebrow" id="endEyebrow">Dive log</p><h2 id="endTitle">Out of air</h2></div>
-    </div>
-    <p id="endText"></p>
-    <button class="go" id="restartBtn" type="button">Dive again</button>
+    <button class="go" id="startBtn" type="button">Go in</button>
   </div>
 </div>
 
