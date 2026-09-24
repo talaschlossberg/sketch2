@@ -1602,12 +1602,13 @@ const player = { x: 0, y: 0, vx: 0, vy: 0, face: 1, target: null, s: {}, armed: 
 let state = 'menu';
 const keys = new Set(), pressed = new Set();
 const $ = (id) => document.getElementById(id);
-const ui = { addPhotos: $('addPhotos'), hud: $('hudRoot'), start: $('startScreen'), num: $('worldNum'), name: $('worldName'), toast: $('toast'), focusHint: $('focusHint') };
+const ui = { dirList: $('dirList'), where: $('where'), addPhotos: $('addPhotos'), hud: $('hudRoot'), start: $('startScreen'), num: $('worldNum'), name: $('worldName'), toast: $('toast'), focusHint: $('focusHint') };
 
 let toastTimer = 0;
 function toast(msg, secs = 5) { ui.toast.textContent = msg; ui.toast.classList.add('on'); toastTimer = secs; }
 function labelWorld() {
   ui.num.textContent = String(WORLD_ORDER.indexOf(world.id) + 1); ui.name.textContent = world.name;
+  for (const b of ui.dirList.querySelectorAll('button')) b.setAttribute('aria-current', String(b.dataset.to === world.id));
   ui.addPhotos.hidden = world.id !== 'dark';
 }
 
@@ -1631,6 +1632,21 @@ function start() {
   takeFocus();
 }
 $('startBtn').addEventListener('click', start);
+
+// the directory: click the place label to list every place, then click one to go there
+WORLD_ORDER.forEach((id, i) => {
+  const li = document.createElement('li'), b = document.createElement('button');
+  b.type = 'button'; b.dataset.to = id;
+  b.innerHTML = `<b>${i + 1}</b><span>${WORLDS[id].name}</span>`;
+  b.addEventListener('click', () => { toggleDir(false); if (id !== world.id) goThrough({ to: id }); takeFocus(); });
+  li.appendChild(b); ui.dirList.appendChild(li);
+});
+function toggleDir(open = ui.dirList.hidden) {
+  ui.dirList.hidden = !open;
+  ui.where.setAttribute('aria-expanded', String(open));
+}
+ui.where.addEventListener('click', () => toggleDir());
+document.addEventListener('pointerdown', (e) => { if (!ui.dirList.hidden && !e.target.closest('#dir')) toggleDir(false); });
 // your own photos, hung in the darkroom for this visit
 $('photoInput').addEventListener('change', (e) => {
   for (const file of e.target.files) { const im = new Image(); im.onload = () => DARK.hang(im); im.src = URL.createObjectURL(file); }

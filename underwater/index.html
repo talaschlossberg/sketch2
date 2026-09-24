@@ -27,7 +27,20 @@
 
   /* a small primer label naming the world you're in */
   .hud { position: fixed; pointer-events: none; }
-  #where { left: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: stretch; background: var(--paper); border: 2px solid var(--red); border-radius: 10px; overflow: hidden; }
+  /* the directory: the place label opens a list of every place */
+  #dir { position: fixed; left: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 6px; justify-items: start; }
+  #where { display: flex; align-items: stretch; background: var(--paper); border: 2px solid var(--red); border-radius: 10px; overflow: hidden; padding: 0; cursor: pointer; font: inherit; color: var(--ink); }
+  #where:hover span { text-decoration: underline; }
+  #where:focus-visible, #dirList button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  #where i { font-style: normal; align-self: center; padding-right: 12px; font-size: 13px; }
+  #where[aria-expanded="true"] i { transform: rotate(180deg); }
+  #dirList { list-style: none; margin: 0; padding: 6px; background: var(--paper); border: 2px solid var(--red); border-radius: 10px;
+    display: grid; gap: 2px; max-height: calc(100vh - 120px); overflow-y: auto; min-width: 210px; }
+  #dirList button { width: 100%; display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 5px 8px; border-radius: 6px;
+    font: 500 15px var(--font); color: var(--ink); cursor: pointer; text-align: left; }
+  #dirList button b { width: 26px; height: 26px; display: grid; place-items: center; background: var(--red); color: var(--paper); font-weight: 500; font-size: 14px; flex: none; }
+  #dirList button:hover { background: #ebe3d1; }
+  #dirList button[aria-current="true"] { background: #ebe3d1; }
   #where b { background: var(--red); color: var(--paper); font-size: 24px; font-weight: 500; width: 44px; display: grid; place-items: center; }
   #where span { padding: 8px 14px; font-size: 15px; font-weight: 500; letter-spacing: 0.06em; align-self: center; }
   .num { width: 64px; height: 64px; background: var(--red); color: var(--paper); display: grid; place-content: center; text-align: center; }
@@ -42,7 +55,7 @@
   #addPhotos:focus-within { outline: 3px solid var(--blue); outline-offset: 2px; }
   #focusHint { left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); font-size: 14px; font-weight: 500;
     background: var(--red); color: var(--paper); padding: 8px 14px; border-radius: 6px; white-space: nowrap; }
-  @media (max-width: 560px) { #focusHint { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } #where { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } }
+  @media (max-width: 560px) { #focusHint { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } #dir { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); } }
 
   /* arrow pad */
   #pad { position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
@@ -88,7 +101,10 @@
 <div id="game"></div>
 
 <div id="hudRoot" hidden>
-  <div id="where" class="hud"><b id="worldNum">1</b><span id="worldName">The House</span></div>
+  <nav id="dir" aria-label="Places">
+    <ol id="dirList" hidden></ol>
+    <button id="where" type="button" aria-expanded="false" aria-controls="dirList"><b id="worldNum">1</b><span id="worldName">The House</span><i aria-hidden="true">▴</i></button>
+  </nav>
   <div id="toast" class="hud"></div>
   <label id="addPhotos" hidden>Add photos<input id="photoInput" type="file" accept="image/*" multiple hidden></label>
   <div id="focusHint" class="hud" hidden>Click the house to use your arrow keys</div>

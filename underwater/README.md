@@ -35,6 +35,7 @@ arrive somewhere you have to step out of the portal before it can take you back.
 ## Controls
 - Arrow keys, or the arrow pad on screen
 - Click or tap: head for that spot
+- The place label in the bottom-left corner opens a directory of every place; click one to go straight there
 
 When the page sits inside another page (an embed or a viewer), the keyboard only reaches it
 while it has focus. It takes focus when you start or click, and shows "Click the house to use
