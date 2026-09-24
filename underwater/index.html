@@ -4,21 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Blue Hollow</title>
-<meta name="asset-base" content="../">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;700;800&display=swap">
 <style>
   :root {
     color-scheme: light;
-    --paper: #faf4ef;
-    --paper-2: #f0dfe3;
-    --ink: #1d1d1b;
-    --teal: #0f7160;
-    --deep: #0f7160;
-    --mustard: #d9c227;
-    --tomato: #ef7426;
-    --pink: #eaa8cb;
+    --paper: #f7efe2;
+    --paper-2: #e8dcc6;
+    --ink: #22252a;
+    --teal: #2f5aa8;
+    --deep: #2f5aa8;
+    --mustard: #e3a33a;
+    --tomato: #e0533d;
+    --pink: #f2b9a6;
     --font: "Karla", "Helvetica Neue", Arial, system-ui, sans-serif;
   }
   [hidden] { display: none !important; }
@@ -63,7 +62,7 @@
 
 
   /* Screens */
-  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(15, 113, 96, 0.35); }
+  .screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(47, 90, 168, 0.3); }
   .panel { position: relative; width: min(480px, 100%); display: grid; gap: 18px; padding: 34px 30px 30px;
     background: var(--paper); border-radius: 22px 22px 22px 6px; box-sizing: border-box; }
   .panel::before { content: ""; position: absolute; top: -34px; right: 34px; width: 92px; height: 92px; border-radius: 50%;
@@ -85,6 +84,19 @@
   button.go:active { transform: translate(1px, 2px); }
   button.go:focus-visible { outline: 3px solid var(--mustard); outline-offset: 3px; }
 
+  /* on-screen arrow pad */
+  #pad { position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px); gap: 4px; }
+  #pad button { font: 700 16px var(--font); color: var(--paper); background: var(--deep); border: 0; border-radius: 12px;
+    cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #pad button.on { background: var(--tomato); }
+  #pad button:focus-visible { outline: 3px solid var(--mustard); outline-offset: 2px; }
+  #pad [data-dir="up"] { grid-area: 1 / 2; }
+  #pad [data-dir="left"] { grid-area: 2 / 1; }
+  #pad [data-dir="right"] { grid-area: 2 / 3; }
+  #pad [data-dir="down"] { grid-area: 3 / 2; }
+  #game canvas:focus { outline: none; }
+  @media (max-width: 700px) { #o2 { bottom: calc(180px + env(safe-area-inset-bottom, 0px)); } }
   @media (max-width: 520px) { #readout .v { font-size: 17px; } #sonar { width: 84px; } .panel { padding: 28px 22px 24px; } }
   @media (prefers-reduced-motion: reduce) { #o2.low #o2Fill { animation: none; } }
 </style>
@@ -103,10 +115,10 @@
   <div id="sonar" class="hud card">
     <span class="k">Sonar</span>
     <svg viewBox="-30 -30 60 60" aria-hidden="true">
-      <circle r="27" fill="#0f7160"/>
-      <circle r="17" fill="#eaa8cb"/>
-      <circle r="6" fill="#0f7160"/>
-      <g id="sonarArrow"><path d="M0,-25 L9,-5 L0,-10 L-9,-5 Z" fill="#ef7426"/></g>
+      <circle r="27" fill="#2f5aa8"/>
+      <circle r="17" fill="#f2b9a6"/>
+      <circle r="6" fill="#2f5aa8"/>
+      <g id="sonarArrow"><path d="M0,-25 L9,-5 L0,-10 L-9,-5 Z" fill="#e0533d"/></g>
     </svg>
     <span id="sonarDist">--</span>
   </div>
@@ -115,15 +127,21 @@
     <div class="bar"><div id="o2Fill"></div></div>
   </div>
   <div id="toast" class="hud"></div>
+  <div id="pad" aria-label="Swim controls">
+    <button type="button" data-dir="up" aria-label="Swim up">▲</button>
+    <button type="button" data-dir="left" aria-label="Swim left">◀</button>
+    <button type="button" data-dir="right" aria-label="Swim right">▶</button>
+    <button type="button" data-dir="down" aria-label="Swim down">▼</button>
+  </div>
 </div>
 
 <div id="startScreen" class="screen">
   <div class="panel">
-    <p class="eyebrow">Shape land · 20 pearls</p>
+    <p class="eyebrow">A paper lagoon · 20 pearls</p>
     <h1>Blue Hollow</h1>
     <p>Clams on the floor of the hollow are holding pearls, each marked by a sparkle. Collect them all before your tank runs dry. Surface to breathe, and give the jellyfish room.</p>
     <dl class="keys" id="keyList">
-      <dt>Arrow keys</dt><dd>Swim</dd>
+      <dt>Arrows</dt><dd>Swim (keyboard, or the arrow pad on screen)</dd>
       <dt>Click</dt><dd>Swim to that spot, or to a clam</dd>
       <dt>Surface</dt><dd>Refill your tank</dd>
     </dl>

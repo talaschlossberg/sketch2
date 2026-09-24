@@ -54,10 +54,11 @@ function fbm(x, y, oct = 4) {
 }
 const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
 
-// ---------- palette (from the cut-paper shapes in ../shapes-1) -------
+// ---------- palette ---------------------------------------------------
 const PAL = {
-  pink: '#eaa8cb', orange: '#ef7426', green: '#0f7160', yellow: '#d9c227', lemon: '#f5e663',
-  cream: '#faf4ef', ink: '#1d1d1b', blue: '#3d6fb6', rose: '#d9829f', sand: '#f6e7d3',
+  cream: '#f7efe2', ink: '#22252a', coral: '#e0533d', ochre: '#e3a33a', cobalt: '#2f5aa8',
+  foam: '#8cc9a8', olive: '#6f8a3c', plum: '#7a4a7e', blush: '#f2b9a6', slate: '#5d6f78',
+  slateLight: '#a9b6bb', sand: '#efe3cc', deepSand: '#d8c19c',
 };
 const WATER = ['#b3e0df', '#9ad3d4', '#80c3c7', '#63aeb4', '#4b979f', '#377f88'];
 
@@ -96,40 +97,7 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// ---------- art: your shapes + matching hand-cut ones ---------------------------
-function loadImage(src) {
-  return new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
-}
-// Crops a transparent PNG to its visible shape (some source files are mostly empty canvas).
-function trimmed(img) {
-  if (!img) return null;
-  try {
-    const s = Math.min(1, 700 / Math.max(img.width, img.height));
-    const c = document.createElement('canvas');
-    c.width = Math.ceil(img.width * s); c.height = Math.ceil(img.height * s);
-    const g = c.getContext('2d');
-    g.drawImage(img, 0, 0, c.width, c.height);
-    const d = g.getImageData(0, 0, c.width, c.height).data;
-    let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
-    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
-      if (d[(y * c.width + x) * 4 + 3] > 40) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    }
-    if (x1 < x0) return null;
-    const o = document.createElement('canvas');
-    o.width = x1 - x0 + 1; o.height = y1 - y0 + 1;
-    o.getContext('2d').drawImage(c, -x0, -y0);
-    return o;
-  } catch (e) { return null; }
-}
-// The shapes load from the repo's shapes-1/ and new/ folders; a single-file build can inline them as window.SHAPE_ART.
-const ASSET_BASE = document.querySelector('meta[name="asset-base"]')?.content ?? '../';
-const art = Object.fromEntries(await Promise.all([
-  ['pinkflower', 'shapes-1/pinkflower.png'], ['redflower', 'shapes-1/redflower.png'],
-  ['greenflower', 'shapes-1/greenflower.png'], ['redsun', 'shapes-1/redsun.png'],
-  ['pinktriangle', 'shapes-1/pinktriangle.png'], ['semicircle', 'shapes-1/semicircle.png'],
-  ['macaroni', 'shapes-1/yellowmacaroni.png'], ['noodle', 'new/yellow%20noodle.png'],
-].map(async ([k, p]) => [k, trimmed(await loadImage(window.SHAPE_ART?.[k] ?? ASSET_BASE + p))])));
-
+// ---------- cut-paper art, all drawn in code ------------------------------------
 // drawing helpers (all draw in a w×h box, origin top-left)
 let crand = mulberry32(77);
 function blob(g, cx, cy, rx, ry, wob = 0.06) {
@@ -146,24 +114,12 @@ function fillWith(g, path, color, pattern) {
   path(); g.fillStyle = color; g.fill();
   if (pattern) { g.save(); path(); g.clip(); pattern(); g.restore(); }
 }
-function stripes(g, w, h, color, width, gap, angle = 0.5) {
+function bands(g, w, h, color, width, gap, angle = 0) {
   g.save(); g.translate(w / 2, h / 2); g.rotate(angle);
-  g.strokeStyle = color; g.lineWidth = width; g.lineCap = 'round';
-  const R = Math.hypot(w, h);
-  for (let x = -R; x < R; x += width + gap) {
-    g.beginPath();
-    for (let y = -R; y <= R; y += 8) g.lineTo(x + Math.sin(y * 0.03 + x) * width * 0.45, y);
-    g.stroke();
-  }
-  g.restore();
-}
-function dashes(g, w, h, color, n, len = 16, thick = 6) {
   g.fillStyle = color;
-  for (let i = 0; i < n; i++) {
-    g.save(); g.translate(crand() * w, crand() * h); g.rotate(-0.7 + crand() * 0.5);
-    g.beginPath(); g.roundRect(-len / 2, -thick / 2, len * (0.6 + crand() * 0.7), thick, thick / 2); g.fill();
-    g.restore();
-  }
+  const R = Math.hypot(w, h);
+  for (let x = -R; x < R; x += width + gap) g.fillRect(x, -R, width, 2 * R);
+  g.restore();
 }
 function spots(g, w, h, color, n, r = 6) {
   g.fillStyle = color;
@@ -178,38 +134,6 @@ function wavyLine(x0, y0, y1, amp, freq, phase) {
   for (let y = y0; y >= y1; y -= 5) pts.push([x0 + Math.sin(y * freq + phase) * amp, y]);
   return pts;
 }
-function drawArt(img, fallback) {
-  return (g, w, h) => {
-    if (!img) return fallback(g, w, h);
-    const s = Math.min(w / img.width, h / img.height);
-    g.drawImage(img, (w - img.width * s) / 2, h - img.height * s, img.width * s, img.height * s);
-  };
-}
-function flower(petals, color, centre, pattern) {
-  return (g, w, h) => {
-    const cx = w / 2, cy = w / 2, R = w * 0.27;
-    noodle(g, wavyLine(cx, h, cy, 4, 0.05, 1), w * 0.06, PAL.green);
-    const path = () => {
-      g.beginPath();
-      for (let i = 0; i < petals; i++) {
-        const a = (i / petals) * Math.PI * 2 + 0.3;
-        g.moveTo(cx + Math.cos(a) * R + R * 0.62, cy + Math.sin(a) * R);
-        g.ellipse(cx + Math.cos(a) * R, cy + Math.sin(a) * R, R * 0.62, R * 0.58, a, 0, Math.PI * 2);
-      }
-    };
-    fillWith(g, path, color, pattern && (() => pattern(g, w, h)));
-    blob(g, cx, cy, R * 0.42, R * 0.4, 0.1); g.fillStyle = centre; g.fill();
-  };
-}
-// A flower (art or hand-cut) set on a stem, so it grows out of the seabed.
-function onStem(img, fallback) {
-  return (g, w, h) => {
-    if (!img) return fallback(g, w, h);
-    noodle(g, wavyLine(w / 2, h, w * 0.5, 4, 0.05, 2), w * 0.06, PAL.green);
-    const s = Math.min(w / img.width, (w * 0.95) / img.height);
-    g.drawImage(img, (w - img.width * s) / 2, w * 0.5 - (img.height * s) / 2, img.width * s, img.height * s);
-  };
-}
 function fishArt(body, pattern, fin) {
   return (g, w, h) => {
     const by = h * 0.5;
@@ -220,6 +144,82 @@ function fishArt(body, pattern, fin) {
     fillWith(g, () => blob(g, w * 0.6, by, w * 0.32, h * 0.33, 0.035), body, pattern && (() => pattern(g, w, h)));
     g.beginPath(); g.arc(w * 0.8, by - h * 0.07, h * 0.1, 0, 7); g.fillStyle = PAL.cream; g.fill();
     g.beginPath(); g.arc(w * 0.815, by - h * 0.07, h * 0.05, 0, 7); g.fillStyle = PAL.ink; g.fill();
+  };
+}
+// sea anemone: a short stalk with a crown of rounded tentacles
+function anemone(stalk, tips) {
+  return (g, w, h) => {
+    const cx = w / 2, top = h * 0.45;
+    for (let i = 0; i < 11; i++) {
+      const a = Math.PI * (1.08 + (i / 10) * 0.84);
+      const L = h * (0.36 + crand() * 0.12);
+      const ex = cx + Math.cos(a) * L * 1.05, ey = top + Math.sin(a) * L;
+      noodle(g, [[cx, top + 4], [lerp(cx, ex, 0.5) + Math.cos(a + 1.6) * 4, lerp(top, ey, 0.5)], [ex, ey]], w * 0.09, tips);
+    }
+    fillWith(g, () => { g.beginPath(); g.moveTo(cx - w * 0.2, h); g.lineTo(cx - w * 0.15, top); g.lineTo(cx + w * 0.15, top); g.lineTo(cx + w * 0.2, h); g.closePath(); }, stalk,
+      () => bands(g, w, h, PAL.cream, 3, 9, 0));
+  };
+}
+// branching coral: a stem that forks twice, with round tips
+function branchCoral(color) {
+  return (g, w, h) => {
+    const lw = w * 0.1;
+    const branch = (x, y, a, len, depth) => {
+      const ex = x + Math.cos(a) * len, ey = y + Math.sin(a) * len;
+      noodle(g, [[x, y], [ex, ey]], lw * (0.7 + depth * 0.15), color);
+      if (depth > 0) { branch(ex, ey, a - 0.5 - crand() * 0.2, len * 0.72, depth - 1); branch(ex, ey, a + 0.45 + crand() * 0.2, len * 0.7, depth - 1); }
+    };
+    branch(w / 2, h, -Math.PI / 2, h * 0.34, 2);
+  };
+}
+// sea fan: a flat fan of criss-crossed ribs on a short stem
+function seaFan(color) {
+  return (g, w, h) => {
+    const cx = w / 2, by = h * 0.92;
+    g.save();
+    g.beginPath(); g.ellipse(cx, by, w * 0.47, h * 0.86, 0, Math.PI, 0); g.clip();
+    g.strokeStyle = color; g.lineWidth = 3.2;
+    for (let i = 0; i <= 12; i++) {
+      const a = Math.PI + (i / 12) * Math.PI;
+      g.beginPath(); g.moveTo(cx, by); g.lineTo(cx + Math.cos(a) * w, by + Math.sin(a) * h * 1.6); g.stroke();
+    }
+    for (let r = 0.25; r < 1; r += 0.16) { g.beginPath(); g.ellipse(cx, by, w * 0.47 * r, h * 0.86 * r, 0, Math.PI, 0); g.stroke(); }
+    g.restore();
+    noodle(g, [[cx, h], [cx, by - 4]], 7, color);
+  };
+}
+// sponge: a cluster of tubes with dark openings
+function sponge(color) {
+  return (g, w, h) => {
+    const tubes = [[0.28, 0.62, 0.22], [0.52, 0.95, 0.26], [0.76, 0.5, 0.2]];
+    for (const [fx, fh, fw] of tubes) {
+      const x = w * fx, tw = w * fw, th = h * fh;
+      g.fillStyle = color; g.beginPath(); g.roundRect(x - tw / 2, h - th, tw, th + 4, [tw / 2, tw / 2, 0, 0]); g.fill();
+      g.fillStyle = PAL.ink; g.beginPath(); g.ellipse(x, h - th + tw * 0.32, tw * 0.28, tw * 0.14, 0, 0, 7); g.fill();
+    }
+  };
+}
+// sea urchin: a round body with a halo of spines
+function urchin(body, spine) {
+  return (g, w, h) => {
+    const cx = w / 2, cy = h * 0.62, R = w * 0.26;
+    g.strokeStyle = spine; g.lineWidth = 2.4; g.lineCap = 'round';
+    for (let i = 0; i < 26; i++) {
+      const a = Math.PI + (i / 25) * Math.PI, L = R * (1.5 + crand() * 0.35);
+      g.beginPath(); g.moveTo(cx + Math.cos(a) * R * 0.8, cy + Math.sin(a) * R * 0.8); g.lineTo(cx + Math.cos(a) * L, cy + Math.sin(a) * L); g.stroke();
+    }
+    blob(g, cx, cy, R, R * 0.9, 0.04); g.fillStyle = body; g.fill();
+  };
+}
+// starfish lying on the sand
+function starfish(color) {
+  return (g, w, h) => {
+    const cx = w / 2, cy = h * 0.55, R = w * 0.46, r = w * 0.17;
+    g.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rad = i % 2 ? r : R; g.lineTo(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad * 0.55); }
+    g.closePath(); g.fillStyle = color; g.fill();
+    g.fillStyle = PAL.cream;
+    for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5; g.beginPath(); g.arc(cx + Math.cos(a) * R * 0.5, cy + Math.sin(a) * R * 0.28, 2.2, 0, 7); g.fill(); }
   };
 }
 
@@ -243,52 +243,52 @@ function sprite(w, h, draw, variants = 3) {
 
 const S = {};
 S.fish = {
-  blueDash: sprite(96, 48, fishArt(PAL.blue, (g, w, h) => dashes(g, w, h, PAL.lemon, 14, 8, 3), PAL.lemon)),
-  blueStripe: sprite(96, 48, fishArt(PAL.blue, (g, w, h) => stripes(g, w, h, PAL.cream, 3.5, 10, 0.2), PAL.pink)),
-  yellowDot: sprite(80, 40, fishArt(PAL.yellow, (g, w, h) => spots(g, w, h, PAL.orange, 12, 3), PAL.orange)),
-  sardine: sprite(60, 26, fishArt(PAL.cream, (g, w, h) => { g.fillStyle = PAL.blue; g.fillRect(0, h * 0.44, w, h * 0.12); }, PAL.blue)),
-  clown: sprite(70, 36, fishArt(PAL.orange, (g, w, h) => stripes(g, w, h, PAL.cream, 6, 16, 0), PAL.ink)),
-  pinkDash: sprite(90, 46, fishArt(PAL.pink, (g, w, h) => dashes(g, w, h, PAL.orange, 16, 8, 3), PAL.orange)),
-  greenStripe: sprite(100, 50, fishArt(PAL.green, (g, w, h) => stripes(g, w, h, PAL.pink, 3, 8, 0.7), PAL.pink)),
+  cobaltSpot: sprite(96, 48, fishArt(PAL.cobalt, (g, w, h) => spots(g, w, h, PAL.cream, 14, 3), PAL.ochre)),
+  cobaltBand: sprite(96, 48, fishArt(PAL.cobalt, (g, w, h) => bands(g, w, h, PAL.ochre, 5, 16, 0), PAL.foam)),
+  ochre: sprite(80, 40, fishArt(PAL.ochre, (g, w, h) => bands(g, w, h, PAL.coral, 4, 12, 0), PAL.coral)),
+  sardine: sprite(60, 26, fishArt(PAL.slateLight, (g, w, h) => { g.fillStyle = PAL.cobalt; g.fillRect(0, h * 0.44, w, h * 0.12); }, PAL.cobalt)),
+  coral: sprite(70, 36, fishArt(PAL.coral, (g, w, h) => bands(g, w, h, PAL.cream, 6, 16, 0), PAL.ink)),
+  plum: sprite(90, 46, fishArt(PAL.plum, (g, w, h) => spots(g, w, h, PAL.blush, 12, 3.5), PAL.blush)),
+  foam: sprite(100, 50, fishArt(PAL.foam, (g, w, h) => bands(g, w, h, PAL.olive, 3, 9, 0.9), PAL.olive)),
 };
-S.jelly = [PAL.pink, PAL.lemon, PAL.cream, PAL.rose].map((bell, i) => sprite(70, 120, (g, w, h) => {
-  const tent = [PAL.orange, PAL.pink, PAL.orange, PAL.lemon][i];
+S.jelly = [[PAL.blush, PAL.coral], [PAL.cream, PAL.plum], [PAL.foam, PAL.cobalt], [PAL.blush, PAL.ochre]].map(([bell, tent]) => sprite(70, 120, (g, w, h) => {
   for (let k = 0; k < 5; k++) noodle(g, wavyLine(w * (0.22 + k * 0.14), h - 4, h * 0.3, 3, 0.12, k * 1.7 + crand()), 3, tent);
   fillWith(g, () => { g.beginPath(); g.ellipse(w / 2, h * 0.32, w * 0.46, h * 0.28, 0, Math.PI, 0); g.closePath(); }, bell,
-    () => stripes(g, w, h, i % 2 ? PAL.pink : PAL.orange, 3.5, 7, 0));
+    () => { g.fillStyle = tent; for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(w * (0.22 + k * 0.19), h * 0.3, 3.5, 0, 7); g.fill(); } });
 }));
 S.plants = {
   shallow: [
-    sprite(110, 190, onStem(art.pinkflower, flower(5, PAL.pink, PAL.orange))),
-    sprite(110, 170, onStem(art.redflower, flower(5, PAL.orange, PAL.pink))),
-    sprite(120, 180, onStem(art.greenflower, flower(6, PAL.green, PAL.pink, (g, w, h) => stripes(g, w, h, PAL.pink, 2.5, 9, 0.4)))),
-    sprite(100, 160, flower(6, PAL.yellow, PAL.orange)),
-    sprite(120, 110, drawArt(art.pinktriangle, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, 4); g.lineTo(w - 4, h); g.lineTo(4, h); g.closePath(); }, PAL.pink, () => dashes(g, w, h, PAL.orange, 30)))),
-    sprite(130, 70, drawArt(art.semicircle, (g, w, h) => fillWith(g, () => { g.beginPath(); g.arc(w / 2, h, w * 0.48, Math.PI, 0); g.closePath(); }, PAL.pink, () => stripes(g, w, h, PAL.orange, 5, 8, 0.6)))),
-    sprite(130, 70, (g, w, h) => fillWith(g, () => { g.beginPath(); g.arc(w / 2, h, w * 0.48, Math.PI, 0); g.closePath(); }, PAL.orange, () => stripes(g, w, h, PAL.pink, 5, 8, -0.6))),
-    sprite(60, 130, (g, w, h) => { noodle(g, wavyLine(w / 2, h, h * 0.35, 3, 0.06, 0), 5, PAL.green); blob(g, w / 2, h * 0.28, w * 0.4, w * 0.4, 0.05); g.fillStyle = PAL.orange; g.fill(); }),
+    sprite(90, 110, anemone(PAL.plum, PAL.blush)),
+    sprite(90, 110, anemone(PAL.coral, PAL.ochre)),
+    sprite(100, 140, branchCoral(PAL.coral)),
+    sprite(100, 130, branchCoral(PAL.blush)),
+    sprite(80, 60, starfish(PAL.coral)),
+    sprite(70, 52, starfish(PAL.ochre)),
+    sprite(80, 90, urchin(PAL.plum, PAL.ink)),
+    sprite(90, 100, sponge(PAL.ochre)),
   ],
   mid: [
-    sprite(170, 80, drawArt(art.macaroni, (g, w, h) => { g.beginPath(); g.arc(w / 2, h, w * 0.4, Math.PI, 0); g.strokeStyle = PAL.yellow; g.lineWidth = 22; g.stroke(); })),
-    sprite(110, 100, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, 4); g.lineTo(w - 6, h); g.lineTo(6, h); g.closePath(); }, PAL.green, () => stripes(g, w, h, PAL.lemon, 3, 10, -0.4))),
-    sprite(100, 170, onStem(art.redsun, (g, w, h) => { noodle(g, wavyLine(w / 2, h, w / 2, 3, 0.06, 0), 6, PAL.green); blob(g, w / 2, w / 2, w * 0.42, w * 0.42, 0.05); g.fillStyle = PAL.orange; g.fill(); })),
+    sprite(140, 120, seaFan(PAL.plum)),
+    sprite(130, 110, seaFan(PAL.coral)),
+    sprite(90, 110, sponge(PAL.foam)),
+    sprite(80, 90, urchin(PAL.ink, PAL.slate)),
   ],
-  grass: [PAL.green, PAL.yellow, '#3c8a55'].map((c) => sprite(70, 70, (g, w, h) => {
+  grass: [PAL.olive, PAL.foam, '#4f7a3a'].map((c) => sprite(70, 70, (g, w, h) => {
     for (let k = 0; k < 4; k++) noodle(g, wavyLine(w * (0.18 + k * 0.21), h, h * (0.1 + crand() * 0.35), 3, 0.1, k + crand() * 3), 5, c);
   })),
 };
 S.rock = [
-  sprite(200, 110, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.05), PAL.green, () => stripes(g, w, h, PAL.pink, 4, 14, 0.5))),
-  sprite(170, 90, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.07), PAL.ink, () => spots(g, w, h, PAL.cream, 14, 4))),
-  sprite(150, 90, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.05), PAL.rose, () => dashes(g, w, h, PAL.green, 18, 12, 5))),
+  sprite(200, 110, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.05), PAL.slate, () => spots(g, w, h, PAL.slateLight, 16, 5))),
+  sprite(170, 90, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.07), PAL.ink, () => spots(g, w, h, PAL.slate, 14, 4))),
+  sprite(150, 90, (g, w, h) => fillWith(g, () => blob(g, w / 2, h * 1.02, w * 0.48, h * 0.98, 0.05), PAL.slateLight, () => spots(g, w, h, PAL.cream, 10, 3))),
 ];
 S.vent = sprite(90, 120, (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w * 0.36, 4); g.lineTo(w * 0.64, 4); g.lineTo(w - 3, h); g.lineTo(3, h); g.closePath(); }, PAL.ink,
-  () => { for (let k = 0; k < 4; k++) noodle(g, wavyLine(w * (0.28 + k * 0.15), h, 8, 2, 0.12, k), 2, PAL.cream); }));
-const clamShell = (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, h); g.arc(w / 2, h, w * 0.48, Math.PI, 0); g.closePath(); }, PAL.orange,
-  () => { g.strokeStyle = PAL.pink; g.lineWidth = 3; for (let k = 1; k < 8; k++) { const a = Math.PI + (k / 8) * Math.PI; g.beginPath(); g.moveTo(w / 2, h); g.lineTo(w / 2 + Math.cos(a) * w, h + Math.sin(a) * w); g.stroke(); } });
+  () => spots(g, w, h, PAL.slate, 12, 4)));
+const clamShell = (g, w, h) => fillWith(g, () => { g.beginPath(); g.moveTo(w / 2, h); g.arc(w / 2, h, w * 0.48, Math.PI, 0); g.closePath(); }, PAL.ochre,
+  () => { g.strokeStyle = PAL.cream; g.lineWidth = 3; for (let k = 1; k < 8; k++) { const a = Math.PI + (k / 8) * Math.PI; g.beginPath(); g.moveTo(w / 2, h); g.lineTo(w / 2 + Math.cos(a) * w, h + Math.sin(a) * w); g.stroke(); } });
 S.clamOpen = sprite(90, 70, (g, w, h) => {
   g.save(); g.translate(0, -h * 0.28); clamShell(g, w, h * 0.8); g.restore();     // lid, lifted
-  g.fillStyle = PAL.pink; g.fillRect(w * 0.1, h * 0.52, w * 0.8, h * 0.06);
+  g.fillStyle = PAL.plum; g.fillRect(w * 0.1, h * 0.52, w * 0.8, h * 0.06);
   g.save(); g.translate(0, h * 0.55); g.scale(1, 0.45); g.translate(w, h); g.rotate(Math.PI); clamShell(g, w, h); g.restore();
   g.beginPath(); g.arc(w / 2, h * 0.52, w * 0.13, 0, 7); g.fillStyle = PAL.cream; g.fill();
 });
@@ -299,11 +299,18 @@ S.star = sprite(56, 56, (g, w, h) => {
     for (let i = 0; i < 8; i++) { const a = rot + (i * Math.PI) / 4, r = i % 2 ? r2 : r1; g.lineTo(w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r); }
     g.closePath(); g.fillStyle = fill; g.fill();
   };
-  star(w * 0.3, w * 0.06, Math.PI / 4, PAL.orange);
-  star(w * 0.48, w * 0.07, 0, PAL.lemon);
+  star(w * 0.3, w * 0.06, Math.PI / 4, PAL.coral);
+  star(w * 0.48, w * 0.07, 0, PAL.cream);
 });
-S.sun = sprite(150, 150, drawArt(art.redsun, (g, w, h) => { blob(g, w / 2, h / 2, w * 0.46, h * 0.46, 0.05); g.fillStyle = PAL.orange; g.fill(); }), 1);
-S.cloud = [0, 1].map(() => sprite(220, 70, (g, w, h) => { blob(g, w / 2, h / 2, w * 0.47, h * 0.4, 0.12); g.fillStyle = PAL.pink; g.fill(); }, 2));
+S.sun = sprite(150, 150, (g, w, h) => {
+  g.fillStyle = PAL.ochre;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    g.save(); g.translate(w / 2, h / 2); g.rotate(a); g.beginPath(); g.moveTo(w * 0.33, -5); g.lineTo(w * 0.48, 0); g.lineTo(w * 0.33, 5); g.fill(); g.restore();
+  }
+  blob(g, w / 2, h / 2, w * 0.3, h * 0.3, 0.03); g.fill();
+}, 1);
+S.cloud = [0, 1].map(() => sprite(220, 70, (g, w, h) => { blob(g, w / 2, h / 2, w * 0.47, h * 0.4, 0.12); g.fillStyle = '#ffffff'; g.fill(); }, 2));
 
 function drawSprite(sp, x, y, w, h, frame, flip = false, rot = 0, ox = 0.5, oy = 1) {
   // (x, y) is the anchor point in world units; ox/oy place the anchor inside the sprite
@@ -311,7 +318,8 @@ function drawSprite(sp, x, y, w, h, frame, flip = false, rot = 0, ox = 0.5, oy =
   ctx.translate(x, y);
   if (rot) ctx.rotate(rot);
   if (flip) ctx.scale(-1, 1);
-  ctx.drawImage(sp.cuts[frame % sp.cuts.length], -w * ox, -h * oy, w, h);
+  const n = sp.cuts.length;
+  ctx.drawImage(sp.cuts[((frame % n) + n) % n], -w * ox, -h * oy, w, h);
   ctx.restore();
 }
 
@@ -351,6 +359,7 @@ const vents = [];
       // try this pearl's own stretch of the lagoon first, then anywhere
       const x = t < 60 ? 420 + ((i + rand()) / PEARL_COUNT) * (W - 840) : rr(420, W - 420);
       if (!free(x - 60, x + 60) || (t < 200 && !flatEnough(x, 90))) continue;
+      if (t < 300 && clams.some((c) => Math.abs(c.x - x) < 200)) continue;   // keep them spread out
       place(x, 110);
       clams.push({ x, y: baseY(x, 90), taken: false, phase: rand() * 6.28 });
       break;
@@ -374,7 +383,7 @@ const vents = [];
       const x = cx + (k - n / 2) * rr(22, 34);
       if (!free(x - 10, x + 10)) continue;
       const h = Math.min(rr(360, 720), groundAt(x) - SURF - 120);
-      scenery.push({ kelp: true, x, y: groundAt(x) + 8, h, width: rr(12, 18), color: pick([PAL.lemon, PAL.green, PAL.yellow, '#8fb34a']), phase: rand() * 6.28 });
+      scenery.push({ kelp: true, x, y: groundAt(x) + 8, h, width: rr(12, 18), color: pick([PAL.olive, PAL.foam, '#4f7a3a', '#a3b85a']), phase: rand() * 6.28 });
     }
     place(cx, n * 30);
   }
@@ -394,9 +403,9 @@ const vents = [];
     x += w * 0.5 + rr(20, 140);
   }
 }
-// sand markings: dashes cut from pink (shallow) or orange (deep) paper
+// pebbles scattered through the sand
 const sandDashes = [];
-for (let i = 0; i < 1800; i++) {
+for (let i = 0; i < 1100; i++) {
   const x = rr(0, W), g = groundAt(x);
   const y = rr(g + 14, H + 10);
   sandDashes.push({ x, y, a: rr(-0.7, -0.2), l: rr(10, 20), deep: y > deepLine(x) });
@@ -405,11 +414,11 @@ sandDashes.sort((a, b) => a.x - b.x);
 
 // ---------- fish -------------------------------------------------------------
 const SPECIES = [
-  { sp: ['blueDash', 'blueStripe'], n: 16, len: [70, 90], speed: [70, 140] },
-  { sp: ['yellowDot'], n: 18, len: [50, 64], speed: [60, 120] },
+  { sp: ['cobaltSpot', 'cobaltBand'], n: 16, len: [70, 90], speed: [70, 140] },
+  { sp: ['ochre'], n: 18, len: [50, 64], speed: [60, 120] },
   { sp: ['sardine'], n: 34, len: [34, 42], speed: [90, 170] },
-  { sp: ['clown'], n: 10, len: [44, 52], speed: [50, 100] },
-  { sp: ['pinkDash', 'greenStripe'], n: 14, len: [60, 84], speed: [60, 130] },
+  { sp: ['coral'], n: 10, len: [44, 52], speed: [50, 100] },
+  { sp: ['plum', 'foam'], n: 14, len: [60, 84], speed: [60, 130] },
 ];
 const schools = [];
 const fishes = [];
@@ -518,6 +527,7 @@ function startGame() {
   resetGame();
   game.state = 'play';
   ui.start.hidden = true; ui.end.hidden = true; ui.hud.hidden = false;
+  takeFocus();
   toast('Find the sparkling clams');
 }
 function endGame(won) {
@@ -545,19 +555,39 @@ function endGame(won) {
 $('startBtn').addEventListener('click', startGame);
 $('restartBtn').addEventListener('click', startGame);
 
-const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-window.addEventListener('keydown', (e) => {
-  if (!ARROWS.includes(e.code)) return;
+// Arrow keys. The page may sit inside another page (an embed or viewer), so the canvas takes
+// keyboard focus whenever the dive starts or the scene is clicked, and key names are normalised.
+const ARROW_NAMES = { ArrowUp: 'up', Up: 'up', ArrowDown: 'down', Down: 'down', ArrowLeft: 'left', Left: 'left', ArrowRight: 'right', Right: 'right' };
+canvas.tabIndex = 0;
+function takeFocus() { try { window.focus(); canvas.focus({ preventScroll: true }); } catch (e) { /* not focusable here */ } }
+function onKey(e, down) {
+  const dir = ARROW_NAMES[e.key] || ARROW_NAMES[e.code];
+  if (!dir) return;
   e.preventDefault();
-  keys.add(e.code);
-  diver.target = null;     // taking the keys cancels a click-to-swim
-});
-window.addEventListener('keyup', (e) => keys.delete(e.code));
+  if (down) { keys.add(dir); diver.target = null; } // taking the keys cancels a click-to-swim
+  else keys.delete(dir);
+}
+document.addEventListener('keydown', (e) => onKey(e, true), true);
+document.addEventListener('keyup', (e) => onKey(e, false), true);
 window.addEventListener('blur', () => keys.clear());
+
+// On-screen arrows: press and hold with the mouse or a finger.
+const pad = new Set();
+for (const btn of document.querySelectorAll('[data-dir]')) {
+  const dir = btn.dataset.dir;
+  const on = (e) => { e.preventDefault(); pad.add(dir); diver.target = null; btn.classList.add('on'); takeFocus(); };
+  const off = () => { pad.delete(dir); btn.classList.remove('on'); };
+  btn.addEventListener('pointerdown', on);
+  btn.addEventListener('pointerup', off);
+  btn.addEventListener('pointerleave', off);
+  btn.addEventListener('pointercancel', off);
+}
+const held = (dir) => keys.has(dir) || pad.has(dir);
 
 // click (or tap) anywhere in the water to swim there; click a clam to swim to it
 canvas.addEventListener('pointerdown', (e) => {
   if (game.state !== 'play') return;
+  takeFocus();
   const wx = view.x + e.clientX / view.scale, wy = view.y + e.clientY / view.scale;
   const clam = clams.find((c) => !c.taken && Math.hypot(c.x - wx, c.y - 30 - wy) < 70);
   if (clam) diver.target = { x: clam.x, y: clam.y - 60 };
@@ -566,8 +596,8 @@ canvas.addEventListener('pointerdown', (e) => {
 
 // ---------- player update -------------------------------------------------
 function updateDiver(dt) {
-  let ix = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0);
-  let iy = (keys.has('ArrowDown') ? 1 : 0) - (keys.has('ArrowUp') ? 1 : 0);
+  let ix = (held('right') ? 1 : 0) - (held('left') ? 1 : 0);
+  let iy = (held('down') ? 1 : 0) - (held('up') ? 1 : 0);
   if (diver.target) {
     const dx = diver.target.x - diver.x, dy = diver.target.y - diver.y, d = Math.hypot(dx, dy);
     if (d < 24) diver.target = null;
@@ -666,25 +696,25 @@ function drawDiver(frame, moving) {
   // legs and flippers
   for (const [oy, swing] of [[2, 0.12 + k * 0.16], [6, -0.05 - k * 0.16]]) {
     ctx.save(); ctx.translate(-34, oy); ctx.rotate(swing);
-    ctx.fillStyle = PAL.blue; ctx.fillRect(-40, -6, 42, 12);
-    ctx.fillStyle = PAL.orange;
+    ctx.fillStyle = PAL.ink; ctx.fillRect(-40, -6, 42, 12);
+    ctx.fillStyle = PAL.coral;
     ctx.beginPath(); ctx.moveTo(-38, -4); ctx.lineTo(-66, -16); ctx.lineTo(-62, 10); ctx.closePath(); ctx.fill();
     ctx.restore();
   }
   // tank
-  ctx.fillStyle = PAL.green;
+  ctx.fillStyle = PAL.slateLight;
   ctx.beginPath(); ctx.roundRect(-30, -26, 50, 16, 8); ctx.fill();
   // body
-  ctx.fillStyle = PAL.lemon;
+  ctx.fillStyle = PAL.cobalt;
   ctx.beginPath(); ctx.ellipse(-4, 0, 38, 16, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = PAL.pink; ctx.fillRect(-20, -14, 8, 29);
+  ctx.fillStyle = PAL.ochre; ctx.fillRect(-20, -14, 8, 29);
   // arm reaching forward
-  ctx.save(); ctx.translate(18, 6); ctx.rotate(0.35 - k * 0.1); ctx.fillStyle = PAL.lemon; ctx.fillRect(0, -5, 30, 10);
+  ctx.save(); ctx.translate(18, 6); ctx.rotate(0.35 - k * 0.1); ctx.fillStyle = PAL.cobalt; ctx.fillRect(0, -5, 30, 10);
   ctx.fillStyle = PAL.cream; ctx.beginPath(); ctx.arc(32, 0, 6, 0, 7); ctx.fill(); ctx.restore();
   // head, hood and mask
   ctx.fillStyle = PAL.cream; ctx.beginPath(); ctx.arc(40, -6, 15, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = PAL.ink; ctx.beginPath(); ctx.arc(38, -8, 15, Math.PI * 0.95, Math.PI * 1.9); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = PAL.orange; ctx.beginPath(); ctx.roundRect(40, -14, 16, 12, 5); ctx.fill();
+  ctx.fillStyle = PAL.ochre; ctx.beginPath(); ctx.roundRect(40, -14, 16, 12, 5); ctx.fill();
   ctx.fillStyle = '#bfe6e4'; ctx.beginPath(); ctx.roundRect(43, -11, 10, 6, 3); ctx.fill();
   ctx.restore();
 }
@@ -749,7 +779,7 @@ function render(t, frame, st) {
   };
   seabed(); ctx.fillStyle = PAL.sand; ctx.fill();
   ctx.save(); seabed(); ctx.clip();
-  ctx.fillStyle = PAL.pink;
+  ctx.fillStyle = PAL.deepSand;
   ctx.beginPath();
   for (let x = x0; x <= x1; x += 16) ctx.lineTo(x, deepLine(x));
   ctx.lineTo(x1, H + 20); ctx.lineTo(x0, H + 20); ctx.closePath(); ctx.fill();
@@ -757,9 +787,8 @@ function render(t, frame, st) {
   while (lo < hi) { const m = (lo + hi) >> 1; if (sandDashes[m].x < x0) lo = m + 1; else hi = m; }
   for (let i = lo; i < sandDashes.length && sandDashes[i].x < x1; i++) {
     const d = sandDashes[i];
-    ctx.fillStyle = d.deep ? PAL.orange : PAL.pink;
-    ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.a);
-    ctx.beginPath(); ctx.roundRect(-d.l / 2, -3, d.l, 6, 3); ctx.fill(); ctx.restore();
+    ctx.fillStyle = d.deep ? PAL.slate : d.l > 16 ? PAL.slateLight : PAL.deepSand;
+    ctx.beginPath(); ctx.ellipse(d.x, d.y, d.l * 0.3, d.l * 0.2, d.a, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 
@@ -818,7 +847,7 @@ view.x = clamp(diver.x - view.w / 2, 0, W - view.w);
 view.y = clamp(diver.y - view.h * 0.45, -40, H - view.h);
 
 function frameLoop(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const dt = clamp((now - last) / 1000, 0, 0.05);
   last = now;
   if (!document.hidden) t += dt;
   const frame = Math.floor(t * BOIL_FPS);
