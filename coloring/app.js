@@ -6,6 +6,19 @@
 // ---------------------------------------------------------------------------
 const LINE_WIDTH = 2.6; // stroke width in image pixels at a 480px working size
 
+// Neural line-art model (Informative Drawings, MIT licence) run in the browser with ONNX Runtime.
+const MODEL_URL = 'model/informative_drawings.onnx';
+const ORT_CDN = window.SNAP_ORT_BASE || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
+// Per detail level: model working size (long side), ink threshold on the model output
+// pre-blur, hysteresis thresholds on the model output, and cleanup sizes.
+const MODEL_DETAIL = {
+  1: { side: 384, blur: 2.2, low: 0.70, high: 0.40, closeR: 1, minInk: 10, spur: 6, bridge: 8, reach: 20, minStroke: 24, minSpace: 50 },
+  2: { side: 448, blur: 1.6, low: 0.75, high: 0.45, closeR: 1, minInk: 8, spur: 5, bridge: 7, reach: 18, minStroke: 20, minSpace: 40 },
+  3: { side: 512, blur: 1.2, low: 0.75, high: 0.45, closeR: 1, minInk: 8, spur: 5, bridge: 7, reach: 16, minStroke: 16, minSpace: 32 },
+  4: { side: 512, blur: 0.8, low: 0.85, high: 0.55, closeR: 1, minInk: 6, spur: 4, bridge: 6, reach: 14, minStroke: 12, minSpace: 26 },
+  5: { side: 576, blur: 0, low: 0.90, high: 0.60, closeR: 1, minInk: 6, spur: 4, bridge: 6, reach: 12, minStroke: 10, minSpace: 20 },
+};
+
 // Detail levels 1..5: working size, smoothing, line scale (sigmaC), stroke coherence
 // (sigmaM), how much of the page gets inked (inkFrac), and cleanup sizes.
 const DETAIL = {
@@ -972,21 +985,9 @@ function loopsToPath(loops) {
   return d;
 }
 
-// ---------------------------------------------------------------------------
-// Pipeline: image → SVG
-// ---------------------------------------------------------------------------
-function traceImage(img, detailLevel) {
-  const cfg = DETAIL[detailLevel] || DETAIL[3];
-  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-  const s = Math.min(1, cfg.side / Math.max(iw, ih));
-  const W = Math.max(8, Math.round(iw * s)), H = Math.max(8, Math.round(ih * s));
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0, W, H);
-  const data = ctx.getImageData(0, 0, W, H).data;
+// Classic tracer (no model): coherent line drawing on the smoothed photo.
+function classicLines(data, W, H, cfg) {
   const n = W * H;
-
   const smooth = bilateral(data, W, H, 3, 2.0, cfg.sigmaR, cfg.smoothPasses);
   let gray = new Float32Array(n);
   for (let i = 0; i < n; i++) gray[i] = (0.299 * smooth[i * 3] + 0.587 * smooth[i * 3 + 1] + 0.114 * smooth[i * 3 + 2]) / 255;
@@ -1024,6 +1025,109 @@ function traceImage(img, detailLevel) {
   const lines = new Float32Array(n);
   for (let i = 0; i < n; i++) lines[i] = h[i] < cutoff ? 0 : 1;
 
+  return lines;
+}
+
+// Hysteresis threshold on a line map (1 = paper): dark seeds (< high) grow along connected
+// lighter stroke pixels (< low), so continuous outlines survive and faint texture does not.
+function hysteresisInk(y, W, H, low, high) {
+  const n = W * H;
+  const ink = new Uint8Array(n);
+  const stack = new Int32Array(n);
+  let sp = 0;
+  for (let i = 0; i < n; i++) if (y[i] < high) { ink[i] = 1; stack[sp++] = i; }
+  while (sp > 0) {
+    const i = stack[--sp], x = i % W, yy0 = (i - x) / W;
+    for (let dy = -1; dy <= 1; dy++) { const yy = yy0 + dy; if (yy < 0 || yy >= H) continue;
+      for (let dx = -1; dx <= 1; dx++) { const xx = x + dx; if (xx < 0 || xx >= W) continue;
+        const j = yy * W + xx; if (!ink[j] && y[j] < low) { ink[j] = 1; stack[sp++] = j; } } }
+  }
+  return ink;
+}
+
+// ---------------------------------------------------------------------------
+// Neural line art
+// ---------------------------------------------------------------------------
+let modelSession = null, modelLoading = null, modelFailed = false;
+
+function loadModel(onStatus) {
+  if (modelSession) return Promise.resolve(modelSession);
+  if (modelLoading) return modelLoading;
+  modelLoading = (async () => {
+    if (typeof ort === 'undefined') throw new Error('ONNX Runtime did not load');
+    ort.env.wasm.wasmPaths = ORT_CDN;
+    onStatus('Loading drawing model (17 MB, first time only)…');
+    const res = await fetch(MODEL_URL);
+    if (!res.ok) throw new Error('model download failed: ' + res.status);
+    const buf = await res.arrayBuffer();
+    onStatus('Starting drawing model…');
+    // ONNX Runtime tries execution providers in order and keeps the first that starts.
+    const providers = navigator.gpu ? ['webgpu', 'wasm'] : ['wasm'];
+    modelSession = await ort.InferenceSession.create(buf, { executionProviders: providers, graphOptimizationLevel: 'all' });
+    return modelSession;
+  })();
+  modelLoading.catch(() => { modelFailed = true; modelLoading = null; });
+  return modelLoading;
+}
+
+// Returns a line map (1 = paper, 0 = ink) at W×H from the model.
+async function modelLines(data, W, H, session) {
+  const n = W * H;
+  const x = new Float32Array(3 * n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) { x[i] = data[j] / 255; x[n + i] = data[j + 1] / 255; x[2 * n + i] = data[j + 2] / 255; }
+  const input = new ort.Tensor('float32', x, [1, 3, H, W]);
+  const out = await session.run({ input });
+  const y = out.output.data;
+  const lines = new Float32Array(n);
+  for (let i = 0; i < n; i++) lines[i] = Math.min(1, Math.max(0, y[i]));
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline: image → SVG
+// ---------------------------------------------------------------------------
+async function traceImage(img, detailLevel, onStatus) {
+  let session = null;
+  if (!modelFailed) {
+    try { session = await loadModel(onStatus); }
+    catch (err) { console.warn('Drawing model unavailable, using classic tracer', err); }
+  }
+  const useModel = !!session;
+  const cfg = useModel ? (MODEL_DETAIL[detailLevel] || MODEL_DETAIL[2]) : (DETAIL[detailLevel] || DETAIL[3]);
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const s = Math.min(1, cfg.side / Math.max(iw, ih));
+  // The model wants sizes divisible by 8.
+  const W = Math.max(64, Math.round(iw * s / 8) * 8), H = Math.max(64, Math.round(ih * s / 8) * 8);
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, W, H);
+  const data = ctx.getImageData(0, 0, W, H).data;
+  const n = W * H;
+
+  let lines;
+  if (useModel) {
+    onStatus('Drawing…');
+    // A light blur first keeps the model from drawing every hair and blade of grass.
+    let src = data;
+    if (cfg.blur > 0) {
+      const blurred = new Uint8ClampedArray(data.length);
+      for (let ch = 0; ch < 3; ch++) {
+        const plane = new Float32Array(n);
+        for (let i = 0; i < n; i++) plane[i] = data[i * 4 + ch];
+        const b = gaussianBlur(plane, W, H, cfg.blur);
+        for (let i = 0; i < n; i++) blurred[i * 4 + ch] = b[i];
+      }
+      src = blurred;
+    }
+    const y = await modelLines(src, W, H, session);
+    const ink = hysteresisInk(y, W, H, cfg.low, cfg.high);
+    lines = new Float32Array(n);
+    for (let i = 0; i < n; i++) lines[i] = ink[i] ? 0 : 1;
+  } else {
+    lines = classicLines(data, W, H, cfg);
+  }
+
   let ink = new Uint8Array(n);
   for (let i = 0; i < n; i++) ink[i] = lines[i] === 0 ? 1 : 0;
   ink = morphClose(ink, W, H, cfg.closeR);
@@ -1034,7 +1138,9 @@ function traceImage(img, detailLevel) {
   let sk = thin(ink, W, H);
   sk = pruneSpurs(sk, W, H, cfg.spur);
 
-  // Coarse color segmentation → silhouette strokes where the line drawing left gaps.
+  // Classic mode only: coarse color segmentation → silhouette strokes where lines left gaps.
+  if (!useModel) {
+  const smooth = bilateral(data, W, H, 3, 2.0, cfg.sigmaR, cfg.smoothPasses);
   const labc = rgbToLab(smooth, n);
   let cls = kmeansLabels(labc, n, cfg.K, 8);
   cls = modeFilter(cls, W, H, cfg.K, 2);
@@ -1045,6 +1151,7 @@ function traceImage(img, detailLevel) {
   const extra = fenceLines(fence, sk, W, H, cfg.fenceGap);
   for (let i = 0; i < n; i++) if (extra[i]) sk[i] = 1;
   sk = thin(sk, W, H);
+  }
 
   sk = bridgeEnds(sk, W, H, cfg.bridge, cfg.reach);
   sk = pruneSpurs(sk, W, H, 3);
@@ -1317,7 +1424,7 @@ async function retrace() {
   setBusy(true, 'Tracing outline…');
   await new Promise((r) => setTimeout(r, 30)); // let the spinner paint
   try {
-    const { svgText, W, H, regionCount } = traceImage(state.image, +el.detail.value);
+    const { svgText, W, H, regionCount } = await traceImage(state.image, +el.detail.value, (t) => setBusy(true, t));
     state.W = W; state.H = H;
     el.svgHost.innerHTML = svgText;
     const svg = el.svgHost.querySelector('svg');

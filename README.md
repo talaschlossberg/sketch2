@@ -18,6 +18,8 @@ On a phone:
 5. **Save** shares/downloads a PNG; **SVG** downloads the vector file.
 6. Use "Add to Home Screen" (Share menu on iOS, browser menu on Android) to install it as an app. It works offline after the first visit.
 
-How the tracing works (all in the browser, nothing is uploaded): the photo is shrunk, smoothed with an edge-preserving bilateral filter and contrast-normalised, then drawn with coherent line drawing (an edge tangent flow guides a difference-of-Gaussians filter, after Kang, Lee & Chui 2007). The ink is thinned to a one-pixel skeleton, hairs are pruned, loose ends are bridged to nearby lines so outlines close, and silhouette strokes from a coarse colour segmentation fill in where the line drawing missed an edge. Every stroke is drawn at one width, and the spaces between the lines become SVG paths you can tap. Sounds are generated with the Web Audio API: each swatch is a note on an A-minor pentatonic scale, and bigger spaces ring a little longer.
+How the tracing works (all in the browser, nothing is uploaded): the photo is shrunk and lightly blurred, then a small neural line-art model (Informative Drawings, MIT licence, see `coloring/model/README.md`) draws it as a pen sketch using ONNX Runtime Web. The sketch is thresholded with hysteresis, thinned to a one-pixel skeleton, hairs are pruned, loose ends are bridged to nearby lines so outlines close, and every stroke is drawn at one width. The spaces between the lines become SVG paths you can tap. If the model cannot load (for example offline on a first visit), a classic coherent-line-drawing tracer takes over. Sounds are generated with the Web Audio API: each swatch is a note on an A-minor pentatonic scale, and bigger spaces ring a little longer.
+
+The model is about 17 MB and downloads once; the service worker keeps it for later visits. Tracing takes a few seconds on a phone.
 
 Everything is plain HTML/CSS/JS with no build step.
