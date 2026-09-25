@@ -13,7 +13,7 @@ Open `index.html` through any local web server, for example:
 
 | # | Place | You are | How you move | Doors to |
 |---|-------|---------|--------------|----------|
-| 1 | The House | a diver | swim | Night Sky, Grandstand, Shapes, Long Day, The Hour, Sky (parlor window), Fridge, Darkroom (bathroom mirror) |
+| 1 | The House | a diver | swim | Night Sky, Grandstand, Shapes, Long Day, The Hour, Sky (parlor window), Fridge, Darkroom (bathroom mirror), Symphony (gramophone) |
 | 2 | The Night Sky | a lantern-bearer | drift; nearby stars join up to you | House, Orbits, Mirror, Sky |
 | 3 | The Long Day | a sand serpent | swim through the sand with the arrows and leap out of it; the desert passes from dawn (left) to night (right) | House, Shapes, Sky (a floating ring), Grandstand, Darkroom |
 | 4 | The Grandstand | a briefcase on legs | hop one step at a time, ↑ hops high | House, The Hour, Dune |
@@ -24,6 +24,12 @@ Open `index.html` through any local web server, for example:
 | 9 | The Sky | a small bird | ↑ flaps, ← → steer, let go to glide, ↓ dives; columns of warm air lift you | House, Night Sky, Dune |
 | 10 | The Fridge | a pea | never stops bouncing between glass shelves; ← → nudge, ↑ bounces big | House (the light), Shapes (the cheese), Mirror (the jelly), The Hour (the egg) |
 | 11 | The Darkroom | a moth | flutters, never quite straight; let go and it drifts toward light. Prints on the drying lines develop as it hovers near them | House (the enlarger lamp), Mirror (a tray), Long Day (the door) |
+
+| 12 | The Symphony | the conductor | swing the baton with the arrows; every stroke that turns or stops is a beat and the section under the baton plays (faster is louder, higher is higher). Click a section to cue it | House (exit door), The Hour (metronome), Orbits (gong) |
+
+The Symphony's sound is synthesised live with the Web Audio API: bowed violins, cellos and basses,
+flutes, brass, a harp that plays arpeggios, bells, timpani and a choir, in a concert-hall reverb.
+The harmony moves through C – Am – F – G every eight beats, so any gesture stays in key.
 
 ## Your photos
 The Darkroom is made to hold your own photos: see `photos/README.md`. They're printed in the
@@ -48,6 +54,6 @@ Ambient motion moves in small flip-book steps. Every shape is drawn in code; no 
 
 ## Code
 Each place is one block in `main.js` (`HOUSE`, `NIGHT`, `DUNE`, `STAND`, `CLOCK`, `SHAPES`,
-`ORBIT`, `MIRROR`, `SKY`, `FRIDGE`, `DARK`) with its own palette, `move()` (how its creature moves), `draw()`, `avatar()`
+`ORBIT`, `MIRROR`, `SKY`, `FRIDGE`, `DARK`, `SYMPHONY`) with its own palette, `move()` (how its creature moves), `draw()`, `avatar()`
 and `portals`. To add a place, write a block like these, add it to `WORLDS` and `WORLD_ORDER`,
 and point a portal at it. `window.deepHouse.go('orbit')` jumps to a place from the console.

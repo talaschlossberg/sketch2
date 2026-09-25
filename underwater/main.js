@@ -238,7 +238,7 @@ const HOUSE = (() => {
   add('suitcases', { x: 300, y: 700 });
   for (let i = 0; i < 14; i++) add('chair', { x: 640 + i * 82, y: 700, face: 1 });
   add('ladder', { x: 2000, y0: 724, y1: 1024 });
-  add('sofa', { x: 480, y: 1024 }); add('lamp', { x: 690, y: 1024 }); add('sideTable', { x: 790, y: 1024 });
+  add('sofa', { x: 480, y: 1024 }); add('lamp', { x: 690, y: 1024 }); add('sideTable', { x: 790, y: 1024 }); add('gramophone', { x: 790, y: 964 });
   add('window', { x: 900, y: 800 }); add('clock', { x: 1020, y: 1024 }); add('plant', { x: 270, y: 1024 });
   add('window', { x: 1260, y: 790 }); add('table', { x: 1380, y: 1024 });
   add('chair', { x: 1290, y: 1024, face: 1 }); add('chair', { x: 1470, y: 1024, face: -1 });
@@ -284,6 +284,7 @@ const HOUSE = (() => {
     { to: 'clock', shape: 'circle', x: 1020, y: 858, r: 24, exit: { x: 930, y: 930 } },
     { to: 'sky', shape: 'rect', x: 862, y: 752, w: 76, h: 96, exit: { x: 880, y: 910 } },
     { to: 'dark', shape: 'rect', x: 508, y: 1126, w: 64, h: 88, exit: { x: 470, y: 1270 } },
+    { to: 'symphony', shape: 'circle', x: 800, y: 880, r: 38, exit: { x: 760, y: 780 }, horn: true },
     { to: 'fridge', shape: 'rect', x: 1586, y: 862, w: 68, h: 158, exit: { x: 1520, y: 950 } },
   ];
 
@@ -356,6 +357,9 @@ const HOUSE = (() => {
       case 'lamp':
         ctx.fillStyle = INK; ctx.fillRect(x - 1.5, y - 150, 3, 150); ctx.fillRect(x - 16, y - 4, 32, 4);
         poly([[x - 16, y - 150], [x + 16, y - 150], [x + 26, y - 186], [x - 26, y - 186]], P.yellow); ink(1.2); ctx.stroke();
+        break;
+      case 'gramophone':
+        box(x - 22, y - 24, 44, 24, P.wood, 1.2); ctx.fillStyle = INK; ctx.fillRect(x - 3, y - 50, 6, 26);
         break;
       case 'sideTable': ctx.fillStyle = P.wood; ctx.fillRect(x - 30, y - 60, 60, 8); ctx.fillRect(x - 26, y - 52, 5, 52); ctx.fillRect(x + 21, y - 52, 5, 52); break;
       case 'clock': {
@@ -448,6 +452,7 @@ const HOUSE = (() => {
     ctx.fillStyle = P.yellow; ctx.fillRect(2220, 1668, 100, 4);
     ctx.lineWidth = 7; ctx.strokeStyle = P.trim; ctx.beginPath(); ctx.arc(1300, 520, 48, 0, 7); ctx.stroke();
     ctx.lineWidth = 5; ctx.strokeStyle = '#8a6a4a'; ctx.beginPath(); ctx.arc(1020, 858, 27, 0, 7); ctx.stroke();
+    ctx.lineWidth = 6; ctx.strokeStyle = P.yellow; ctx.beginPath(); ctx.arc(800, 880, 42, 0, 7); ctx.stroke(); ctx.fillStyle = P.yellow; ctx.beginPath(); ctx.moveTo(790, 916); ctx.lineTo(800, 910); ctx.lineTo(794, 940); ctx.closePath(); ctx.fill();
   }
   function shell(st) {
     ctx.fillStyle = P.roof;
@@ -1590,8 +1595,256 @@ const DARK = (() => {
   };
 })();
 
-const WORLDS = { dark: DARK, sky: SKY, fridge: FRIDGE, house: HOUSE, night: NIGHT, dune: DUNE, stand: STAND, clock: CLOCK, shapes: SHAPES, orbit: ORBIT, mirror: MIRROR };
-const WORLD_ORDER = ['house', 'night', 'dune', 'stand', 'clock', 'shapes', 'orbit', 'mirror', 'sky', 'fridge', 'dark'];
+// =====================================================================
+// 12. The Symphony: you are the conductor. Swing the baton over the orchestra;
+//     every stroke that turns back or stops is a beat, and the section under
+//     the baton plays on it. Faster strokes are louder; higher in a section is
+//     higher in pitch. Or click a section to cue it. All sound is synthesised.
+// =====================================================================
+const AUDIO = { ctx: null, played: 0 };
+function unlockAudio() {
+  try {
+    if (!AUDIO.ctx) {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4;
+      const master = ctx.createGain(); master.gain.value = 0.55;
+      // a concert-hall reverb from a burst of decaying noise
+      const len = ctx.sampleRate * 2.8, ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+      const verb = ctx.createConvolver(); verb.buffer = ir;
+      const wet = ctx.createGain(); wet.gain.value = 0.42;
+      const bus = ctx.createGain();
+      bus.connect(master); bus.connect(verb); verb.connect(wet); wet.connect(master);
+      master.connect(comp); comp.connect(ctx.destination);
+      Object.assign(AUDIO, { ctx, bus, voices: 0 });
+    }
+    if (AUDIO.ctx.state === 'suspended') AUDIO.ctx.resume();
+  } catch (e) { /* no sound available here */ }
+}
+const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+// one note on one instrument; returns nothing, cleans itself up
+function playVoice(voice, midi, vel, delay = 0) {
+  const A = AUDIO; if (!A.ctx || A.voices > 48) return;
+  const ctx = A.ctx, t0 = ctx.currentTime + 0.01 + delay, f = mtof(midi);
+  const out = ctx.createGain(); out.connect(A.bus);
+  const env = out.gain;
+  const osc = (type, freq, detune = 0) => { const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq; o.detune.value = detune; return o; };
+  const nodes = [];
+  const adsr = (a, peak, hold, rel) => { env.setValueAtTime(0.0001, t0); env.exponentialRampToValueAtTime(peak, t0 + a); env.setValueAtTime(peak, t0 + a + hold); env.exponentialRampToValueAtTime(0.0001, t0 + a + hold + rel); return a + hold + rel; };
+  let dur = 1;
+  const v = 0.25 + vel * 0.75;
+  if (voice === 'strings' || voice === 'low') {
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = voice === 'low' ? 700 : 2000; lp.Q.value = 0.7; lp.connect(out);
+    for (const d of [-7, 7]) { const o = osc('sawtooth', f, d); o.connect(lp); nodes.push(o); }
+    const lfo = osc('sine', 5.2), lg = ctx.createGain(); lg.gain.value = f * 0.006; lfo.connect(lg); for (const o of nodes) lg.connect(o.frequency); nodes.push(lfo);
+    dur = adsr(0.12, 0.16 * v, 0.35, 1.3);
+  } else if (voice === 'flute') {
+    const o = osc('triangle', f); o.connect(out); nodes.push(o);
+    const lfo = osc('sine', 5.6), lg = ctx.createGain(); lg.gain.value = f * 0.012; lfo.connect(lg); lg.connect(o.frequency); nodes.push(lfo);
+    dur = adsr(0.06, 0.22 * v, 0.25, 0.6);
+  } else if (voice === 'brass') {
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 2; lp.connect(out);
+    lp.frequency.setValueAtTime(300, t0); lp.frequency.exponentialRampToValueAtTime(2600 * v + 400, t0 + 0.08); lp.frequency.exponentialRampToValueAtTime(900, t0 + 0.6);
+    for (const d of [0, 5]) { const o = osc('sawtooth', f, d); o.connect(lp); nodes.push(o); }
+    dur = adsr(0.05, 0.14 * v, 0.3, 0.5);
+  } else if (voice === 'harp') {
+    const o = osc('sine', f), o2 = osc('triangle', f * 2); const g2 = ctx.createGain(); g2.gain.value = 0.25; o.connect(out); o2.connect(g2); g2.connect(out); nodes.push(o, o2);
+    env.setValueAtTime(0.0001, t0); env.exponentialRampToValueAtTime(0.3 * v, t0 + 0.004); env.exponentialRampToValueAtTime(0.0001, t0 + 2); dur = 2;
+  } else if (voice === 'bells') {
+    for (const [m, g, d] of [[1, 0.22, 2.8], [2.76, 0.1, 1.4], [5.4, 0.05, 0.7]]) {
+      const o = osc('sine', f * m), gg = ctx.createGain(); gg.gain.setValueAtTime(g * v, t0); gg.gain.exponentialRampToValueAtTime(0.0001, t0 + d); o.connect(gg); gg.connect(out); nodes.push(o);
+    }
+    env.value = 1; dur = 2.8;
+  } else if (voice === 'timpani') {
+    const o = osc('sine', f * 1.5); o.frequency.setValueAtTime(f * 1.5, t0); o.frequency.exponentialRampToValueAtTime(f, t0 + 0.12); o.connect(out); nodes.push(o);
+    const nb = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const ns = ctx.createBufferSource(); ns.buffer = nb; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 180; bp.Q.value = 1.5;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.5 * v, t0); ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25); ns.connect(bp); bp.connect(ng); ng.connect(out); nodes.push(ns);
+    env.setValueAtTime(0.0001, t0); env.exponentialRampToValueAtTime(0.5 * v, t0 + 0.005); env.exponentialRampToValueAtTime(0.0001, t0 + 1.4); dur = 1.4;
+  } else if (voice === 'choir') {
+    const src = ctx.createGain();
+    for (const d of [-9, 0, 9]) { const o = osc('sawtooth', f, d); o.connect(src); nodes.push(o); }
+    for (const [ff, q, g] of [[750, 8, 1], [1150, 10, 0.6], [2600, 12, 0.25]]) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = ff; bp.Q.value = q; const gg = ctx.createGain(); gg.gain.value = g; src.connect(bp); bp.connect(gg); gg.connect(out); }
+    const lfo = osc('sine', 4.8), lg = ctx.createGain(); lg.gain.value = f * 0.008; lfo.connect(lg); for (const o of nodes) lg.connect(o.frequency); nodes.push(lfo);
+    dur = adsr(0.3, 0.5 * v, 0.4, 1.4);
+  }
+  for (const n of nodes) { n.start(t0); n.stop(t0 + dur + 0.05); }
+  A.voices++; A.played++;
+  nodes[0].onended = () => { A.voices--; out.disconnect(); };
+}
+
+const SYMPHONY = (() => {
+  const W = 1900, H = 1150;
+  const P = { hall: '#3b1d2a', back: '#2c1520', wood: '#a8764e', woodDark: '#7d5438', riser: '#c9a47c', gold: '#e8c547', goldDark: '#b8912e', cream: '#f4efe3', ink: INK, red: '#c9332a', skin: ['#f1d2b6', '#d9a47c', '#a86f4a', '#7a4a30'] };
+  // C major, moving through I – vi – IV – V
+  const CHORDS = [[0, 4, 7], [9, 0, 4], [5, 9, 0], [7, 11, 2]];
+  const SECTIONS = [
+    { id: 'choir', name: 'choir', x: 180, y: 150, w: 520, h: 170, voice: 'choir', reg: [55, 72], rows: 2, per: 9, n: 3 },
+    { id: 'brass', name: 'brass', x: 730, y: 150, w: 440, h: 170, voice: 'brass', reg: [48, 67], rows: 2, per: 6, n: 3 },
+    { id: 'timpani', name: 'timpani', x: 1200, y: 150, w: 280, h: 170, voice: 'timpani', reg: [38, 50], rows: 1, per: 3, n: 1 },
+    { id: 'bells', name: 'bells', x: 1510, y: 150, w: 220, h: 170, voice: 'bells', reg: [76, 91], rows: 1, per: 2, n: 1 },
+    { id: 'harp', name: 'harp', x: 180, y: 350, w: 300, h: 190, voice: 'harp', reg: [55, 84], rows: 1, per: 2, n: 4, arp: true },
+    { id: 'winds', name: 'flutes', x: 510, y: 350, w: 880, h: 190, voice: 'flute', reg: [67, 88], rows: 2, per: 9, n: 2 },
+    { id: 'violins', name: 'violins', x: 180, y: 570, w: 780, h: 210, voice: 'strings', reg: [62, 86], rows: 2, per: 9, n: 2 },
+    { id: 'cellos', name: 'cellos & basses', x: 990, y: 570, w: 740, h: 210, voice: 'low', reg: [36, 57], rows: 2, per: 7, n: 2 },
+  ];
+  for (const s of SECTIONS) s.glow = 0;
+  const notes = [];     // little note shapes floating up from a section that just played
+  const ripples = [];
+  let beats = 0, chord = 0;
+  function pitches(sec, relY, n) {
+    const cs = CHORDS[chord], out = [];
+    const pool = [];
+    for (let m = sec.reg[0]; m <= sec.reg[1]; m++) if (cs.includes(((m % 12) + 12) % 12)) pool.push(m);
+    const start = Math.round((1 - relY) * (pool.length - 1));
+    for (let k = 0; k < n; k++) out.push(pool[clamp(start - k * (sec.arp ? -1 : 1), 0, pool.length - 1)]);
+    return out;
+  }
+  function cue(x, y, vel) {
+    const sec = SECTIONS.find((s) => x > s.x && x < s.x + s.w && y > s.y && y < s.y + s.h);
+    ripples.push({ x, y, t: 0, big: !!sec });
+    if (!sec) return;
+    unlockAudio();
+    const relY = clamp((y - sec.y) / sec.h, 0, 1);
+    pitches(sec, relY, sec.n).forEach((m, k) => playVoice(sec.voice, m, vel, sec.arp ? k * 0.07 : 0));
+    sec.glow = 1;
+    for (let k = 0; k < 2 + Math.round(vel * 3); k++) notes.push({ x: sec.x + rr(20, sec.w - 20), y: sec.y + 20, vy: rr(-70, -40), life: 1.6, c: rand() < 0.5 });
+    beats++;
+    if (beats % 8 === 0) chord = (chord + 1) % CHORDS.length;
+  }
+  const seats = [];      // the audience in the dark, in rows
+  for (let r = 0; r < 3; r++) for (let x = 30 + r * 22; x < W; x += 44) seats.push({ x, y: 1040 + r * 40 });
+  const portals = [
+    { to: 'house', shape: 'rect', x: 40, y: 780, w: 90, h: 150, exit: { x: 950, y: 700 } },
+    { to: 'clock', shape: 'rect', x: 1765, y: 470, w: 90, h: 140, exit: { x: 950, y: 700 } },
+    { to: 'orbit', shape: 'circle', x: 1810, y: 230, r: 60, exit: { x: 950, y: 700 } },
+  ];
+  function musician(x, y, sec, k, frame, glow) {
+    const bob = glow > 0.05 ? ((frame + k) % 2 ? -3 : 1) : 0;
+    const skin = P.skin[(k * 7 + sec.x) % P.skin.length];
+    ctx.save(); ctx.translate(x, y + bob);
+    if (sec.id === 'choir') {
+      poly([[-11, 0], [11, 0], [9, -28], [-9, -28]], '#262626'); ctx.fillStyle = '#f4efe3'; ctx.fillRect(-6, -28, 12, 5);
+      circle(0, -38, 9, skin, false);
+      if (glow > 0.05) circle(0, -34, 3.2, '#5a1a1a', false); else { ctx.fillStyle = '#5a1a1a'; ctx.fillRect(-3, -35, 6, 1.5); }
+    } else {
+      poly([[-10, 0], [10, 0], [8, -24], [-8, -24]], '#262626');
+      circle(0, -33, 8.5, skin, false);
+      const saw = glow > 0.05 ? ((frame + k) % 2 ? 10 : -10) : 0;
+      if (sec.id === 'violins') { ctx.fillStyle = P.woodDark; ctx.beginPath(); ctx.ellipse(10, -24, 9, 5, -0.4, 0, 7); ctx.fill(); ink(1.2); ctx.beginPath(); ctx.moveTo(-6 + saw, -30); ctx.lineTo(22 + saw, -14); ctx.stroke(); }
+      else if (sec.id === 'cellos') { ctx.fillStyle = P.woodDark; ctx.beginPath(); ctx.ellipse(12, -10, 9, 16, 0, 0, 7); ctx.fill(); ink(1.4); ctx.beginPath(); ctx.moveTo(12, -26); ctx.lineTo(12, -44); ctx.moveTo(0 + saw, -12); ctx.lineTo(26 + saw, -8); ctx.stroke(); }
+      else if (sec.id === 'winds') { ink(2.4, '#cfc8bd'); ctx.beginPath(); ctx.moveTo(4, -34); ctx.lineTo(26, -30); ctx.stroke(); }
+      else if (sec.id === 'brass') { ctx.fillStyle = P.gold; ctx.fillRect(4, -34, 16, 5); poly([[20, -38], [30, -44], [30, -20], [20, -26]], P.gold); }
+      else if (sec.id === 'harp') { ink(3, P.gold); ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(14, -70); ctx.quadraticCurveTo(36, -70, 40, -10); ctx.lineTo(14, 0); ctx.stroke(); ink(0.8, '#f4efe3'); for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(18 + i * 3.5, -64 + i * 6 + (glow > 0.05 && i % 2 ? 1 : 0)); ctx.lineTo(18 + i * 3.5, 0); ctx.stroke(); } }
+      else if (sec.id === 'timpani') { ctx.fillStyle = '#b86b3a'; ctx.beginPath(); ctx.arc(22, -10, 22, 0, Math.PI); ctx.fill(); ctx.fillStyle = '#e9dcc8'; ctx.fillRect(0, -12, 44, 4); ink(2); ctx.beginPath(); ctx.moveTo(4, -30); ctx.lineTo(16, -14 - (glow > 0.05 ? (frame % 2) * 8 : 0)); ctx.stroke(); }
+      else if (sec.id === 'bells') { for (let i = 0; i < 5; i++) { ctx.fillStyle = i % 2 ? P.gold : P.goldDark; ctx.fillRect(14 + i * 8, -70 + i * 4, 5, 50 - i * 4); } ctx.fillStyle = P.woodDark; ctx.fillRect(10, -74, 44, 4); }
+    }
+    ctx.restore();
+  }
+  return {
+    id: 'symphony', name: 'The Symphony', swatch: ['#3b1d2a', '#e8c547', '#f4efe3'], bg: P.hall, viewH: 1150, fixed: { x: W / 2, y: H / 2 },
+    x0: 0, y0: 0, x1: W, y1: H, spawn: { x: 950, y: 700 }, portals,
+    hint: 'You are the conductor. Swing the baton with the arrows: each stroke that turns or stops is a beat, and the section under it plays. Or click a section.',
+    place(p, spot) { p.x = spot.x; p.y = spot.y; p.vx = 0; p.vy = 0; p.s.peak = 0; p.s.dir = { x: 0, y: 1 }; p.s.trail = []; },
+    move(p, inp, dt) {
+      const s = p.s;
+      let { ix, iy } = inp;
+      const had = !!p.target;
+      const a = aimAt(p, 14); if (a) ({ ix, iy } = a);
+      if (had && !p.target) { cue(p.x, p.y, 0.7); s.peak = 0; }   // a click lands: that's a beat
+      const l = Math.hypot(ix, iy); if (l > 1) { ix /= l; iy /= l; }
+      p.vx += ix * 3200 * dt; p.vy += iy * 3200 * dt;
+      const d = Math.exp(-5.5 * dt); p.vx *= d; p.vy *= d;
+      p.x = clamp(p.x + p.vx * dt, 60, W - 60); p.y = clamp(p.y + p.vy * dt, 90, 960);
+      // beats: a stroke that reverses direction, or comes to a stop
+      const sp = Math.hypot(p.vx, p.vy);
+      if (sp > s.peak) { s.peak = sp; s.dir = { x: p.vx / sp, y: p.vy / sp }; }
+      if (s.peak > 240 && (p.vx * s.dir.x + p.vy * s.dir.y < -15 || sp < 30)) { cue(p.x, p.y, clamp(s.peak / 900, 0.2, 1)); s.peak = 0; }
+      s.trail.push({ x: p.x, y: p.y }); if (s.trail.length > 26) s.trail.shift();
+      if (Math.abs(p.vx) > 20) p.face = Math.sign(p.vx);
+    },
+    update(dt) {
+      for (const sec of SECTIONS) sec.glow = Math.max(0, sec.glow - dt * 1.2);
+      for (const n of notes) { n.y += n.vy * dt; n.x += Math.sin(n.y * 0.05) * 20 * dt; n.life -= dt; }
+      for (let i = notes.length - 1; i >= 0; i--) if (notes[i].life <= 0) notes.splice(i, 1);
+      for (const r of ripples) r.t += dt;
+      for (let i = ripples.length - 1; i >= 0; i--) if (ripples[i].t > 0.6) ripples.splice(i, 1);
+    },
+    draw(t, frame, st, p) {
+      ctx.fillStyle = P.hall; ctx.fillRect(-100, -100, W + 200, H + 200);
+      // organ pipes along the back wall, in a stepped row
+      for (let i = 0; i < 46; i++) {
+        const x = 80 + i * 38, h = 60 + Math.abs(23 - i) * 3 + (i % 2) * 18;
+        ctx.fillStyle = i % 2 ? P.gold : P.goldDark; ctx.fillRect(x, 130 - h, 22, h);
+        ctx.fillStyle = P.back; ctx.fillRect(x + 7, 130 - h * 0.35, 8, 6);
+      }
+      // hanging lamps
+      for (let x = 160; x < W; x += 260) { ink(1, '#1a0d12'); ctx.beginPath(); ctx.moveTo(x, -100); ctx.lineTo(x, 26); ctx.stroke(); circle(x, 34, 10, '#fff2c0', false); circle(x, 34, 22, 'rgba(255, 242, 192, 0.12)', false); }
+      // tiered risers, wood with pale edges
+      for (const [y, h] of [[330, 20], [550, 20], [790, 20]]) { ctx.fillStyle = P.riser; ctx.fillRect(130, y - 10, W - 260, h); ctx.fillStyle = P.woodDark; ctx.fillRect(130, y + h - 10, W - 260, 6); }
+      ctx.fillStyle = P.wood; ctx.fillRect(100, 800, W - 200, 180);
+      ink(1, 'rgba(60, 30, 20, 0.35)'); for (let x = 120; x < W - 100; x += 60) { ctx.beginPath(); ctx.moveTo(x, 800); ctx.lineTo(x, 980); ctx.stroke(); }
+      // the sections: a soft wash when they play, their name, and their players in rows
+      for (const sec of SECTIONS) {
+        if (sec.glow > 0) { ctx.fillStyle = `rgba(232, 197, 71, ${0.18 * sec.glow})`; ctx.fillRect(sec.x, sec.y, sec.w, sec.h); }
+        ink(1.2, 'rgba(244, 239, 227, 0.18)'); ctx.setLineDash([4, 6]); ctx.strokeRect(sec.x, sec.y, sec.w, sec.h); ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(244, 239, 227, 0.55)'; ctx.font = '500 20px Jost, Futura, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillText(sec.name, sec.x + 8, sec.y + 6);
+        const gapX = sec.w / sec.per;
+        for (let r = 0; r < sec.rows; r++) for (let k = 0; k < sec.per; k++) {
+          const x = sec.x + gapX * (k + 0.5) - (sec.id === 'harp' || sec.id === 'bells' || sec.id === 'timpani' ? 20 : 0) + (r % 2) * gapX * 0.3;
+          const y = sec.y + sec.h - 14 - (sec.rows - 1 - r) * (sec.h * 0.42);
+          if (sec.id !== 'choir' && sec.id !== 'harp' && sec.id !== 'timpani' && sec.id !== 'bells') { ink(1.4, '#1a0d12'); ctx.beginPath(); ctx.moveTo(x - 14, y - 44); ctx.lineTo(x - 14, y); ctx.stroke(); ctx.fillStyle = '#e9dcc8'; ctx.fillRect(x - 24, y - 50, 20, 8); }
+          musician(x, y, sec, r * 10 + k, frame, sec.glow);
+        }
+      }
+      // notes drifting up from whoever just played
+      for (const n of notes) {
+        ctx.globalAlpha = clamp(n.life, 0, 1);
+        circle(n.x, n.y, 7, n.c ? P.gold : P.cream, false); ink(2.2, n.c ? P.gold : P.cream);
+        ctx.beginPath(); ctx.moveTo(n.x + 6, n.y); ctx.lineTo(n.x + 6, n.y - 24); ctx.lineTo(n.x + 16, n.y - 18); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      // portal dressing: an exit door with its sign, a metronome, a gong
+      box(28, 768, 114, 172, '#2a1219', 1.5); ctx.fillStyle = '#57c26a'; ctx.fillRect(48, 738, 74, 22); ctx.fillStyle = INK; ctx.font = '600 16px Jost, Futura, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('EXIT', 85, 749);
+      ctx.fillStyle = P.woodDark; ctx.fillRect(1800, 610, 20, 380); poly([[1765, 610], [1855, 610], [1829, 450], [1791, 450]], P.woodDark);
+      const g = portals[2]; ink(4, P.woodDark); ctx.beginPath(); ctx.moveTo(g.x - 80, g.y - 80); ctx.lineTo(g.x + 80, g.y - 80); ctx.moveTo(g.x - 70, g.y - 80); ctx.lineTo(g.x - 70, g.y + 90); ctx.moveTo(g.x + 70, g.y - 80); ctx.lineTo(g.x + 70, g.y + 90); ctx.stroke();
+      for (const q of portals) drawPortal(q, frame, { lineColor: P.gold, labelAbove: q.to !== 'orbit' });
+      ink(3, P.gold); const sw = Math.sin(t * 3.2) * 0.4; ctx.beginPath(); ctx.moveTo(1810, 600); ctx.lineTo(1810 + Math.sin(sw) * 130, 600 - Math.cos(sw) * 130); ctx.stroke();
+      // the audience, in the dark
+      ctx.fillStyle = '#1a0d12'; ctx.fillRect(-100, 1000, W + 200, 300);
+      for (const s of seats) { circle(s.x, s.y, 15, '#2a1520', false); ctx.fillStyle = '#2a1520'; ctx.fillRect(s.x - 18, s.y + 10, 36, 30); }
+      for (const r of ripples) { ink(3 * (1 - r.t / 0.6), r.big ? P.gold : P.cream); ctx.beginPath(); ctx.arc(r.x, r.y, 12 + r.t * 90, 0, 7); ctx.stroke(); }
+    },
+    avatar(p, frame) {
+      // the conductor on the podium, seen from behind, pointing the baton at its glowing tip
+      const px = 950, py = 1000;
+      box(px - 70, py - 30, 140, 30, P.woodDark, 1.5);
+      const ang = Math.atan2(p.y - (py - 110), p.x - px);
+      const sway = Math.max(-8, Math.min(8, p.vx * 0.01));
+      ctx.save(); ctx.translate(px + sway, py - 30);
+      poly([[-26, 0], [26, 0], [30, -70], [-30, -70]], '#141414');
+      poly([[-26, 0], [-12, 0], [-18, 16]], '#141414'); poly([[26, 0], [12, 0], [18, 16]], '#141414');   // coat tails
+      circle(0, -86, 18, '#e9dcc8', false);
+      for (const [dx, dy] of [[-16, -92], [16, -92], [-10, -100], [10, -100], [0, -104]]) circle(dx, dy, 8, '#ffffff', false);   // wild white hair
+      // right arm reaches along the baton, left arm mirrors it
+      const ax = Math.cos(ang), ay = Math.sin(ang);
+      ink(8, '#141414'); ctx.beginPath(); ctx.moveTo(24, -64); ctx.lineTo(24 + ax * 56, -64 + ay * 56); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-24, -64); ctx.lineTo(-24 - ax * 40, -64 + ay * 44); ctx.stroke();
+      circle(24 + ax * 58, -64 + ay * 58, 6, '#e9dcc8', false);
+      ctx.restore();
+      // the baton: a line from the hand toward the tip, and the tip's gold trail
+      ink(2, '#f4efe3'); ctx.beginPath(); ctx.moveTo(px + sway + 24 + ax * 60, py - 94 + ay * 60); ctx.lineTo(px + sway + 24 + ax * 120, py - 94 + ay * 120); ctx.stroke();
+      const tr = p.s.trail || [];
+      for (let i = 1; i < tr.length; i++) { ink(2 + (i / tr.length) * 8, `rgba(232, 197, 71, ${i / tr.length})`); ctx.beginPath(); ctx.moveTo(tr[i - 1].x, tr[i - 1].y); ctx.lineTo(tr[i].x, tr[i].y); ctx.stroke(); }
+      const r = frame % 2 ? 16 : 12;
+      ctx.fillStyle = '#fff2c0'; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a2 = (i / 10) * 6.283, rad = i % 2 ? r * 0.4 : r; ctx.lineTo(p.x + Math.cos(a2) * rad, p.y + Math.sin(a2) * rad); } ctx.closePath(); ctx.fill();
+    },
+  };
+})();
+
+const WORLDS = { symphony: SYMPHONY, dark: DARK, sky: SKY, fridge: FRIDGE, house: HOUSE, night: NIGHT, dune: DUNE, stand: STAND, clock: CLOCK, shapes: SHAPES, orbit: ORBIT, mirror: MIRROR };
+const WORLD_ORDER = ['house', 'night', 'dune', 'stand', 'clock', 'shapes', 'orbit', 'mirror', 'sky', 'fridge', 'dark', 'symphony'];
 
 // =====================================================================
 // Player, input, travel
@@ -1680,6 +1933,7 @@ function onKey(e, down) {
   e.preventDefault();
   if (down) { if (!keys.has(dir)) pressed.add(dir); keys.add(dir); player.target = null; } else keys.delete(dir);
 }
+for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, unlockAudio, true);
 for (const target of [window, document]) {
   target.addEventListener('keydown', (e) => onKey(e, true), true);
   target.addEventListener('keyup', (e) => onKey(e, false), true);
@@ -1806,4 +2060,4 @@ function frameLoop(now) {
 requestAnimationFrame(frameLoop);
 
 // exposed for tinkering from the console
-window.deepHouse = { player, WORLDS, get world() { return world.id; }, go: (id) => goThrough({ to: id }) };
+window.deepHouse = { audio: AUDIO, player, WORLDS, get world() { return world.id; }, go: (id) => goThrough({ to: id }) };
