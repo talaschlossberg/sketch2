@@ -1,0 +1,155 @@
+:root {
+  --bg: #f5f1ea;
+  --panel: #fffdf9;
+  --ink: #1f1d1a;
+  --muted: #7a746b;
+  --line: #e5ded2;
+  --accent: #eaa8cb;
+  --accent-ink: #3d1f2d;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 6px 18px rgba(60,40,20,.08);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.bar.top { padding-top: calc(8px + env(safe-area-inset-top)); }
+.bar.bottom {
+  flex-direction: column;
+  align-items: stretch;
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+h1 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: .2px; }
+.spacer { flex: 1; }
+.btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.btn:active { transform: translateY(1px); box-shadow: none; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn.small { font-size: 13px; padding: 7px 11px; }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+
+#stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 20% 10%, #fff8ee, transparent 45%),
+    var(--bg);
+}
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 24px;
+  max-width: 340px;
+}
+.empty-art svg { width: 120px; height: 120px; }
+.empty p { line-height: 1.5; margin: 12px 0 20px; }
+.svg-host {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.svg-host svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  background: #fff;
+}
+.svg-host svg path[data-id] { cursor: pointer; transition: fill .12s ease, stroke .12s ease; }
+.busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  justify-items: center;
+  background: rgba(245,241,234,.85);
+  color: var(--muted);
+  font-weight: 600;
+  z-index: 5;
+}
+.spinner {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 4px solid var(--line);
+  border-top-color: var(--accent);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.controls { gap: 12px; }
+.detail { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); flex: 1; }
+.detail input { flex: 1; accent-color: var(--accent); min-width: 80px; }
+
+.palette {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  scrollbar-width: none;
+}
+.palette::-webkit-scrollbar { display: none; }
+.swatch {
+  flex: none;
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  cursor: pointer;
+  position: relative;
+  transition: transform .12s ease;
+}
+.swatch.eraser {
+  background: #fff;
+  display: grid; place-items: center;
+  font-size: 18px;
+}
+.swatch.selected { transform: scale(1.18); box-shadow: 0 0 0 2px var(--ink), var(--shadow); }
+.swatch.ping { animation: ping .35s ease-out; }
+@keyframes ping { 0% { transform: scale(1.18); } 40% { transform: scale(1.35); } 100% { transform: scale(1.18); } }
+.actions { display: flex; align-items: center; gap: 8px; }
+
+[hidden] { display: none !important; }
+
+@media (min-width: 720px) {
+  .empty-art svg { width: 160px; height: 160px; }
+  .palette { justify-content: center; }
+}
