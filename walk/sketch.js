@@ -8,7 +8,7 @@ let STANDING_FRAME = 2;
 let JUMPING_FRAME = 4;
 
 let frames = [];
-let missing = 0;
+let framesFailed = false;
 let crop; // shared box around the drawing in every frame, so his feet stay put
 
 let lines = []; // every line is a list of {x, y} points
@@ -32,19 +32,36 @@ let PIXELS_PER_FRAME = (GUY_HEIGHT * 0.41) / FRAME_COUNT; // one step is about 0
 
 let held = { left: false, right: false, up: false };
 
-function preload() {
+// p5's loadImage fetches the file first, which some hosts block,
+// so the frames are loaded as plain images and copied into p5 images
+function loadFrames() {
+  let loads = [];
   for (let n = 1; n <= FRAME_COUNT; n++) {
-    frames.push(loadImage("frames/walk" + n + ".png", () => {}, () => missing++));
+    loads.push(new Promise((done, fail) => {
+      let el = new Image();
+      el.onload = () => done(el);
+      el.onerror = fail;
+      el.src = frameUrl(n);
+    }));
   }
+  Promise.all(loads).then((els) => {
+    let imgs = els.map((el) => {
+      let img = createImage(el.naturalWidth, el.naturalHeight);
+      img.drawingContext.drawImage(el, 0, 0);
+      return img;
+    });
+    crop = findCrop(imgs);
+    frames = imgs;
+  }, () => (framesFailed = true));
+}
+
+function frameUrl(n) {
+  return "frames/walk" + n + ".png";
 }
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-  if (missing > 0) {
-    frames = [];
-  } else {
-    crop = findCrop(frames);
-  }
+  loadFrames();
   resetLines();
   guy.y = height - 60;
   hookButtons();
@@ -148,6 +165,10 @@ function drawGuy() {
   translate(guy.x, guy.y);
 
   if (frames.length == 0) {
+    if (!framesFailed) {
+      pop();
+      return;
+    }
     scale(guy.facing, 1);
     drawStandIn();
   } else {
