@@ -28,6 +28,7 @@ function makeRoom(kind, name, mapAt) {
     doors: [],
     things: [],
     frames: [],
+    texts: [],
     history: [],
     ink: null,
     thumb: null,
@@ -432,9 +433,11 @@ function saveWorld() {
       count: roomCount,
       rooms: rooms.map((r) => ({
         id: r.id, name: r.name, kind: r.kind, sky: r.sky, map: r.map, thumb: r.thumb, doors: r.doors, things: r.things,
-        frames: r.frames.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, seed: f.seed })),
-        lines: r.lines.map((l) => ({ seed: l.seed, pts: l.map((p) => [round(p.x), round(p.y)]) })),
+        frames: r.frames.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, seed: f.seed, bare: f.bare })),
+        texts: r.texts,
+        lines: r.lines.map((l) => ({ seed: l.seed, colour: l.colour, sharp: l.sharp, pts: l.map((p) => [round(p.x), round(p.y)]) })),
       })),
+      cutouts,
     };
     try {
       let db = await openStore();
@@ -476,10 +479,14 @@ function useWorld(world) {
     ...r,
     things: r.things || [],
     frames: r.frames || [],
+    texts: r.texts || [],
     history: [],
     ink: null,
-    lines: r.lines.map((l) => seeded(l.pts.map(([x, y]) => ({ x, y })), l.seed)),
+    lines: r.lines.map((l) => Object.assign(seeded(l.pts.map(([x, y]) => ({ x, y })), l.seed), l.colour ? { colour: l.colour } : {}, l.sharp ? { sharp: true } : {})),
   }));
+  cutouts = world.cutouts || [];
+  for (let c of cutouts) addCutoutThing(c);
+  fillThingChoices();
   roomCount = world.count || rooms.length;
   roomIndex = max(0, rooms.findIndex((r) => r.id == world.at));
   lines = room().lines;

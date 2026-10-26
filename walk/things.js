@@ -19,7 +19,7 @@ let thingPictures = {};
 let placingThing = null;
 
 function thingUrl(name) {
-  return THINGS[name].file;
+  return THINGS[name].art || THINGS[name].file;
 }
 
 function loadThings() {
@@ -81,7 +81,14 @@ function setPlacingThing(name) {
 }
 
 function hookThings() {
+  fillThingChoices();
+  document.getElementById("noThing").onclick = () => setPlacingThing(null);
+}
+
+// one button per thing, your own cutouts included
+function fillThingChoices() {
   let list = document.querySelector("#thingChoice .choices");
+  list.innerHTML = "";
   for (let name in THINGS) {
     let b = document.createElement("button");
     b.className = "thing-pick";
@@ -92,5 +99,4 @@ function hookThings() {
     b.onclick = () => setPlacingThing(name);
     list.appendChild(b);
   }
-  document.getElementById("noThing").onclick = () => setPlacingThing(null);
 }

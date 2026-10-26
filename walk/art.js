@@ -15,6 +15,7 @@ function frameAt(x, y) {
 }
 
 function inkFrame(g, f) {
+  if (f.bare) return inkImage(g, f);
   g.fill(MAT);
   g.rect(f.x, f.y, f.w, f.h);
   let pic = artPicture(f);
@@ -29,6 +30,26 @@ function inkFrame(g, f) {
   let box = (x, y, w, h) => sharp([{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }, { x, y: y - 1 }]);
   inkLine(g, box(f.x, f.y, f.w, f.h), f.seed);
   inkLine(g, box(f.x - 7, f.y - 7, f.w + 14, f.h + 14), f.seed + 1);
+}
+
+// a photo put straight on the wall, no frame round it
+function inkImage(g, f) {
+  let pic = artPicture(f);
+  if (pic) return g.image(pic, f.x, f.y, f.w, f.h);
+  if (f.art) return;
+  g.push();
+  g.noFill();
+  g.stroke(inkHere());
+  g.strokeWeight(1.5);
+  g.drawingContext.setLineDash([6, 5]);
+  g.rect(f.x, f.y, f.w, f.h);
+  g.drawingContext.setLineDash([]);
+  g.noStroke();
+  g.fill(inkHere());
+  g.textAlign(CENTER, CENTER);
+  g.textSize(12);
+  g.text("click to add a photo", f.x + f.w / 2, f.y + f.h / 2);
+  g.pop();
 }
 
 // the frame's art as a p5 image; loads it the first time and redraws when it's ready
@@ -221,8 +242,12 @@ function hookArt() {
   let photo = document.getElementById("artPhotoInput");
   document.getElementById("artPhoto").onclick = () => photo.click();
   photo.onchange = () => {
-    if (photo.files[0]) putPhotoInFrame(photo.files[0]);
+    let file = photo.files[0];
     photo.value = "";
+    if (!file) return;
+    if (pendingImage) fillImage(pendingImage, file); // the Image tool, straight onto the wall
+    else putPhotoInFrame(file);
+    pendingImage = null;
   };
   document.getElementById("artClear").onclick = () => {
     ctx.fillStyle = MAT;

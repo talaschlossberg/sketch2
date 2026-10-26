@@ -6,51 +6,50 @@ let erasing = false; // dragging the eraser over lines
 let ERASER = 14; // radius
 
 let TOOL_HELP = {
-  erase: "Drag over lines to rub them out. Click a door, thing or frame to take it away.",
+  select: "Drag anything to move it: lines, doors, things, frames, pictures and words.",
+  text: "Click where the words should go, then type. Click words to change them.",
+  image: "Drag a box where the picture should go, then choose a photo.",
+  frame: "Drag on the wall to put up a frame for art.",
+  path: "Click from point to point. Double-click or press Enter to finish.",
+  erase: "Drag over lines to rub them out. Click a door, thing, picture or words to take them away.",
   door: "Click on a line to put a door there.",
-  frame: "Drag on the wall to put up a frame.",
 };
 
 function setTool(name) {
+  if (pathDraft && name != "path") finishPath();
   tool = name;
   placingDoor = name == "door";
-  placingFrame = name == "frame";
+  placingFrame = name == "frame" || name == "image";
   if (name != "thing") placingThing = null;
   for (let b of document.querySelectorAll("[data-tool]")) b.classList.toggle("on", b.dataset.tool == name);
   document.getElementById("thingChoice").hidden = name != "thing" || !!placingThing;
+  document.getElementById("shapePicker").hidden = true;
   document.body.classList.toggle("erasing", name == "erase");
-  if (TOOL_HELP[name]) showStatus(TOOL_HELP[name]);
+  document.body.dataset.using = name;
+  if (TOOL_HELP[name]) showStatus(TOOL_HELP[name], 5000);
   else if (name != "thing") document.getElementById("status").hidden = true;
-  if (name != "draw") closePanelOnPhone();
+  if (name == "shapes") showShapePicker();
+  if (name == "scissors") openCutEditor();
 }
 
 function hookTools() {
   for (let b of document.querySelectorAll("[data-tool]")) {
-    b.onclick = () => setTool(tool == b.dataset.tool && b.dataset.tool != "draw" ? "draw" : b.dataset.tool);
+    b.onclick = () => setTool(tool == b.dataset.tool && !["draw", "shapes"].includes(b.dataset.tool) ? "draw" : b.dataset.tool);
   }
-  let panel = document.getElementById("panel");
-  let toggle = document.getElementById("panelToggle");
-  toggle.onclick = () => {
-    let open = panel.classList.toggle("open");
-    toggle.setAttribute("aria-expanded", open);
-    toggle.textContent = open ? "Close" : "Tools";
-  };
   setTool("draw");
 }
 
-function closePanelOnPhone() {
-  let panel = document.getElementById("panel");
-  if (!panel.classList.contains("open")) return;
-  panel.classList.remove("open");
-  let toggle = document.getElementById("panelToggle");
-  toggle.setAttribute("aria-expanded", false);
-  toggle.textContent = "Tools";
+// the world fills whatever the rail and the bar leave
+function worldWidth() {
+  return windowWidth - cssPixels("--rail");
 }
 
-// the world fills whatever the panel leaves
-function worldWidth() {
-  let panel = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--panel")) || 0;
-  return windowWidth - panel;
+function worldHeight() {
+  return windowHeight - cssPixels("--bar");
+}
+
+function cssPixels(name) {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 0;
 }
 
 // ---- erasing ----
@@ -63,6 +62,7 @@ function roomSnapshot() {
     doors: [...r.doors],
     things: [...r.things],
     frames: [...r.frames],
+    texts: r.texts.map((t) => ({ ...t })),
   };
 }
 
@@ -73,6 +73,7 @@ function restoreSnapshot(snap) {
   r.doors = snap.doors;
   r.things = snap.things;
   r.frames = snap.frames;
+  r.texts = snap.texts || [];
 }
 
 function eraseStart(x, y) {
@@ -86,10 +87,12 @@ function eraseStart(x, y) {
     return abs(x - t.x) < w / 2 && y < t.y && y > t.y - h;
   });
   let frame = frameAt(x, y);
-  if (door) r.doors = r.doors.filter((d) => d != door);
+  let words = textAt(x, y);
+  if (words) r.texts = r.texts.filter((t) => t != words);
+  else if (door) r.doors = r.doors.filter((d) => d != door);
   else if (thing) r.things = r.things.filter((t) => t != thing);
   else if (frame) r.frames = r.frames.filter((f) => f != frame);
-  if (door || thing || frame) {
+  if (words || door || thing || frame) {
     r.history.push({ snapshot: before });
     inkDirty = true;
     saveWorld();

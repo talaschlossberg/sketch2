@@ -91,7 +91,7 @@ function showStatus(text, ms) {
 }
 
 function setup() {
-  createCanvas(worldWidth(), windowHeight);
+  createCanvas(worldWidth(), worldHeight());
   loadBuiltInFrames();
   loadWorld();
   guy.y = floorY();
@@ -102,6 +102,7 @@ function setup() {
   loadThings();
   hookThings();
   hookArt();
+  hookMake();
   hookTools();
   hookSkyButtons();
 }
@@ -114,12 +115,26 @@ function draw() {
   image(room().ink, 0, 0, width, height);
 
   drawDoorHint();
-  if (!trip && !mapOpen && !editingFrame) moveGuy();
+  if (!trip && !mapOpen && !editingFrame && !cut && !typing()) moveGuy();
   drawFrameDraft();
+  drawDrafts();
   drawOpening();
   drawGuy();
   drawTrip();
   drawEraserCursor();
+  drawSelectHover();
+  showRoomName();
+}
+
+function showRoomName() {
+  let el = document.getElementById("roomName");
+  if (el.textContent != room().name) el.textContent = room().name;
+}
+
+// typing words, a name, or anything else: the arrow keys belong to the text
+function typing() {
+  let a = document.activeElement;
+  return a && (a.isContentEditable || a.tagName == "INPUT" || a.tagName == "TEXTAREA");
 }
 
 // ---- moving ----
@@ -287,16 +302,37 @@ function mousePressed(e) {
   if (placingThing) return placeThing(mouseX, mouseY);
   if (placingFrame) return startFrame(mouseX, mouseY);
   if (tool == "erase") return eraseStart(mouseX, mouseY);
-  if (tool == "thing") return; // waiting for a pick from the list
+  if (tool == "select") return startMove(mouseX, mouseY);
+  if (tool == "path") return pathClick(mouseX, mouseY);
+  if (tool == "shapes") {
+    document.getElementById("shapePicker").hidden = true;
+    shapeDraft = { x0: mouseX, y0: mouseY, x1: mouseX, y1: mouseY };
+    return;
+  }
+  if (tool == "text") {
+    let t = textAt(mouseX, mouseY);
+    return writeText(t ? t.x : mouseX, t ? t.y : mouseY, t);
+  }
+  if (tool != "draw") return; // scissors and things wait for their own panels
   let f = frameAt(mouseX, mouseY);
   if (f) return openArtEditor(f);
   drawing = [{ x: mouseX, y: mouseY }];
   drawing.seed = random(1000);
+  if (penColour) drawing.colour = penColour;
   lines.push(drawing);
   room().history.push("line");
 }
 
 function mouseDragged() {
+  if (moving) {
+    moveItemTo(mouseX, mouseY);
+    return false;
+  }
+  if (shapeDraft) {
+    shapeDraft.x1 = mouseX;
+    shapeDraft.y1 = mouseY;
+    return false;
+  }
   if (erasing) {
     eraseAt(mouseX, mouseY);
     return false;
@@ -316,8 +352,10 @@ function mouseDragged() {
 }
 
 function mouseReleased() {
+  if (moving) return endMove();
+  if (shapeDraft) return finishShape();
   if (erasing) return eraseEnd();
-  if (frameDraft) return finishFrame();
+  if (frameDraft) return tool == "image" ? finishImage() : finishFrame();
   if (drawing && drawing.length < 2) {
     lines.pop();
     room().history.pop();
@@ -337,9 +375,14 @@ function drawInk() {
   let fixed = roomDrawing();
   for (let f of room().frames) inkFrame(ink, f);
   ink.fill(inkHere());
-  for (let l of [...solidLines(), ...fixed, ...lines]) inkLine(ink, l);
+  for (let l of [...solidLines(), ...fixed]) inkLine(ink, l);
+  for (let l of lines) {
+    ink.fill(lineColour(l));
+    inkLine(ink, l);
+  }
   for (let t of room().things) inkThing(ink, t);
   for (let d of doorsHere()) inkDoor(ink, d);
+  for (let t of room().texts) if (!t.hidden) inkText(ink, t);
   inkDirty = false;
 }
 
@@ -385,6 +428,8 @@ function roundCorners(pts) {
 }
 
 function keyPressed() {
+  if (typing()) return;
+  if (keyCode == ENTER && pathDraft) return finishPath();
   if (keyCode == UP_ARROW) upTapped = true;
   if (keyCode == LEFT_ARROW || keyCode == RIGHT_ARROW || keyCode == UP_ARROW || keyCode == DOWN_ARROW) {
     return false; // don't scroll the page
@@ -406,7 +451,7 @@ function undo() {
 
 function windowResized() {
   let wasOnFloor = guy.onGround && abs(guy.y - floorY()) < 1;
-  resizeCanvas(worldWidth(), windowHeight);
+  resizeCanvas(worldWidth(), worldHeight());
   if (wasOnFloor) guy.y = floorY();
   inkDirty = true;
 }

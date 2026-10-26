@@ -27,7 +27,7 @@ Everything is plain HTML/CSS/JS with no build step.
 
 ## Walk
 
-Everything lives in a tool panel down the left (behind a **Tools** button on a phone): **Draw**, **Erase** (drag over lines to rub out just the parts you touch; click a door, thing or frame to take it away), **Door**, **Thing**, **Frame**, then **Undo** and **Clear lines**, the four skies, **Map** and **New walker** (`walk/tools.js`).
+The controls follow the idea lab: a rail of tool symbols down the left and a bar across the top (the place's name, the skies, **Map**, **New walker**, **Undo**, **Clear board**, and **?** for the keys), in a handwritten face. The tools: **Select** (drag lines, doors, things, frames, pictures or words to move them), **Text** (click and type; click words to change them), **Image** (drag a box and choose a photo; no frame), **Frame** (a frame for art you draw), **Shapes** (rectangle, circle, triangle, straight line, all walkable), **Pencil**, **Path** (click point to point; double-click or Enter to finish), **Eraser** (rubs out the parts of lines it passes over; click anything else to take it away), **Scissors** (choose a photo, draw a loop round part of it, name it, and it becomes a thing you can place, with a top she can stand on), **Door**, **Thing**, and the pen **Colour** (`walk/tools.js`, `walk/make.js`).
 
 Open `walk/index.html` on a web server. Pick a sky at the top left: **Photo** (a film photo, `walk/sky/sunset.jpg`), **Sunset** (pink-lit clouds), **Day** (drifting clouds) or **Night** (stars, with the lines drawn in white). The painted skies live in `walk/sky.js`, with film grain to sit alongside the photo; the choice is remembered in that browser.
 
