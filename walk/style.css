@@ -1,0 +1,68 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #f4efe4;
+  font-family: -apple-system, Helvetica, Arial, sans-serif;
+}
+
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+#hint {
+  position: fixed;
+  top: 12px;
+  left: 16px;
+  right: 160px;
+  color: #6b6357;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+#tools {
+  position: fixed;
+  top: 8px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+}
+
+#pad {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  font: inherit;
+  font-size: 15px;
+  padding: 8px 14px;
+  border: 2px solid #222;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#pad button {
+  width: 56px;
+  height: 56px;
+  font-size: 20px;
+}
+
+button:active, button.on {
+  background: #222;
+  color: #fff;
+}
+
+/* the on-screen arrows are for touch screens */
+@media (hover: hover) and (pointer: fine) {
+  #pad { display: none; }
+}

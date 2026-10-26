@@ -1,8 +1,9 @@
 # sketch2
 
-Two small p5.js / web experiments.
+Small p5.js / web experiments.
 
 - **`index.html`** — the original "Two Toes Creative" generative collage sketch.
+- **`walk/`** — **Walk**: draw lines and walk a hand-drawn character along them with the arrow keys.
 - **`coloring/`** — **Snap & Color**: take a photo, turn it into a coloring-book outline, and tap the spaces to fill them. Every color plays its own note.
 
 ## Snap & Color
@@ -23,3 +24,9 @@ How the tracing works (all in the browser, nothing is uploaded): the photo is sh
 The model is about 17 MB and downloads once; the service worker keeps it for later visits. Tracing takes a few seconds on a phone.
 
 Everything is plain HTML/CSS/JS with no build step.
+
+## Walk
+
+Open `walk/index.html` on a web server. Drag to draw lines; the left and right arrow keys walk him along them and up jumps (on a phone, use the on-screen arrows). He climbs gentle slopes, stops at steep ones, falls off the ends and drops back in from the top if he leaves the screen. **Undo** removes the last line, **Clear** removes them all.
+
+His frames are `walk/frames/00010walk.png` to `00023walk.png`, facing right. The walk cycle advances with the distance he covers, and the frames flip when he walks left. Until the frames are there, a stick figure stands in.
