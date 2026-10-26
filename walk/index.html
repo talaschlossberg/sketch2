@@ -18,6 +18,7 @@
       </div>
       <button id="mapButton">Map</button>
       <button id="door">Add door</button>
+      <button id="thing">Add thing</button>
       <button id="choose">Choose folder</button>
       <button id="turn">Turn around</button>
       <button id="undo">Undo</button>
@@ -34,6 +35,11 @@
         <button id="pickOnMap">Pick on the map</button>
         <button id="notYet">Not yet</button>
       </div>
+    </div>
+    <div id="thingChoice" hidden>
+      <span>Pick something to put down, then click on a line.</span>
+      <div class="choices"></div>
+      <div class="choices"><button id="noThing">Never mind</button></div>
     </div>
     <div id="map" hidden>
       <div id="mapBar">
@@ -57,6 +63,7 @@
     <script src="sky.js"></script>
     <script src="rooms.js"></script>
     <script src="map.js"></script>
+    <script src="things.js"></script>
     <script src="sketch.js"></script>
   </body>
 </html>

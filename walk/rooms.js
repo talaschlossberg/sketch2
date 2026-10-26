@@ -26,6 +26,7 @@ function makeRoom(kind, name, mapAt) {
     kind,
     lines: [],
     doors: [],
+    things: [],
     history: [],
     ink: null,
     thumb: null,
@@ -88,7 +89,7 @@ function layout() {
 
 // lines she can stand on that come with the room
 function solidLines() {
-  let out = [floorLine()];
+  let out = [floorLine(), ...thingTops()];
   if (room().kind == "room") {
     let L = layout();
     // furniture stands against the back wall: she walks past it, or jumps up onto it
@@ -428,7 +429,7 @@ function saveWorld() {
       at: room().id,
       count: roomCount,
       rooms: rooms.map((r) => ({
-        id: r.id, name: r.name, kind: r.kind, sky: r.sky, map: r.map, thumb: r.thumb, doors: r.doors,
+        id: r.id, name: r.name, kind: r.kind, sky: r.sky, map: r.map, thumb: r.thumb, doors: r.doors, things: r.things,
         lines: r.lines.map((l) => ({ seed: l.seed, pts: l.map((p) => [round(p.x), round(p.y)]) })),
       })),
     };
@@ -450,6 +451,7 @@ function loadWorld() {
   }
   rooms = world.rooms.map((r) => ({
     ...r,
+    things: r.things || [],
     history: [],
     ink: null,
     lines: r.lines.map((l) => seeded(l.pts.map(([x, y]) => ({ x, y })), l.seed)),

@@ -99,6 +99,8 @@ function setup() {
   hookMap();
   loadSky();
   loadDoorPhoto();
+  loadThings();
+  hookThings();
   hookSkyButtons();
 }
 
@@ -267,10 +269,10 @@ function floorLine() {
   return l;
 }
 
-// clears the lines here; doors stay, so the rooms stay linked (Undo takes doors away)
+// clears the lines here; doors and things stay, so the rooms stay linked (Undo takes them away)
 function resetLines() {
   lines.length = 0;
-  room().history = room().history.filter((h) => h == "door");
+  room().history = room().history.filter((h) => h != "line");
   inkDirty = true;
   saveWorld();
 }
@@ -278,6 +280,7 @@ function resetLines() {
 function mousePressed(e) {
   if (e && e.target && e.target.tagName != "CANVAS") return;
   if (placingDoor) return placeDoor(mouseX, mouseY);
+  if (placingThing) return placeThing(mouseX, mouseY);
   drawing = [{ x: mouseX, y: mouseY }];
   drawing.seed = random(1000);
   lines.push(drawing);
@@ -313,6 +316,7 @@ function drawInk() {
   ink.fill(inkHere());
   let fixed = roomDrawing();
   for (let l of [...solidLines(), ...fixed, ...lines]) inkLine(ink, l);
+  for (let t of room().things) inkThing(ink, t);
   for (let d of doorsHere()) inkDoor(ink, d);
   inkDirty = false;
 }
@@ -371,6 +375,7 @@ function undo() {
   let last = room().history.pop();
   if (last == "line") lines.pop();
   if (last == "door") room().doors.pop();
+  if (last == "thing") room().things.pop();
   inkDirty = true;
   saveWorld();
 }

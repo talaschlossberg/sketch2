@@ -119,7 +119,8 @@ button:active, button.on {
   display: none !important;
 }
 
-#doorChoice {
+#doorChoice,
+#thingChoice {
   position: fixed;
   left: 50%;
   bottom: 24px;
@@ -298,4 +299,17 @@ button:focus-visible,
 .card .name:focus-visible {
   outline: 3px solid #e2725b;
   outline-offset: 2px;
+}
+
+.thing-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.thing-pick img {
+  height: 64px;
+  width: auto;
 }
