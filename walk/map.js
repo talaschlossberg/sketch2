@@ -242,6 +242,7 @@ function hookMap() {
   for (let b of document.querySelectorAll("#mapBar [data-new]")) b.onclick = () => newRoomFromMap(b.dataset.new);
   document.addEventListener("keydown", (e) => {
     if (e.key != "Escape") return;
+    if (editingFrame) return closeArtEditor(true);
     if (mapOpen) closeMap();
     closeDoorChoice();
   });

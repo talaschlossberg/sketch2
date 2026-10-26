@@ -27,6 +27,7 @@ function makeRoom(kind, name, mapAt) {
     lines: [],
     doors: [],
     things: [],
+    frames: [],
     history: [],
     ink: null,
     thumb: null,
@@ -422,36 +423,59 @@ function snapshotRoom() {
 
 // ---- keeping the world in this browser ----
 
+// saved in IndexedDB, which has room for photos and art; older saves in localStorage are still read
 function saveWorld() {
   clearTimeout(saveWorld.timer);
-  saveWorld.timer = setTimeout(() => {
+  saveWorld.timer = setTimeout(async () => {
     let world = {
       at: room().id,
       count: roomCount,
       rooms: rooms.map((r) => ({
         id: r.id, name: r.name, kind: r.kind, sky: r.sky, map: r.map, thumb: r.thumb, doors: r.doors, things: r.things,
+        frames: r.frames.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, seed: f.seed })),
         lines: r.lines.map((l) => ({ seed: l.seed, pts: l.map((p) => [round(p.x), round(p.y)]) })),
       })),
     };
     try {
-      localStorage.setItem("walk-world", JSON.stringify(world));
-    } catch (e) {}
+      let db = await openStore();
+      db.transaction("saved", "readwrite").objectStore("saved").put(world, "world");
+    } catch (e) {
+      showStatus("Couldn't save in this browser, so changes will be lost when you leave.", 5000);
+    }
   }, 400);
 }
 
+// starts with one outside straight away, then swaps in the saved world once it's read
 function loadWorld() {
-  let world;
+  makeRoom("outside", "Outside");
+  lines = room().lines;
+  readWorld().then((world) => {
+    if (world && world.rooms && world.rooms.length) useWorld(world);
+  });
+}
+
+async function readWorld() {
   try {
-    world = JSON.parse(localStorage.getItem("walk-world"));
+    let db = await openStore();
+    let world = await new Promise((done) => {
+      let req = db.transaction("saved").objectStore("saved").get("world");
+      req.onsuccess = () => done(req.result || null);
+      req.onerror = () => done(null);
+    });
+    if (world) return world;
   } catch (e) {}
-  if (!world || !world.rooms || !world.rooms.length) {
-    makeRoom("outside", "Outside");
-    lines = room().lines;
-    return;
+  try {
+    return JSON.parse(localStorage.getItem("walk-world"));
+  } catch (e) {
+    return null;
   }
+}
+
+function useWorld(world) {
   rooms = world.rooms.map((r) => ({
     ...r,
     things: r.things || [],
+    frames: r.frames || [],
     history: [],
     ink: null,
     lines: r.lines.map((l) => seeded(l.pts.map(([x, y]) => ({ x, y })), l.seed)),
@@ -459,8 +483,11 @@ function loadWorld() {
   roomCount = world.count || rooms.length;
   roomIndex = max(0, rooms.findIndex((r) => r.id == world.at));
   lines = room().lines;
+  inkDirty = true;
   document.body.dataset.room = isOutside() ? "outside" : "inside";
-  if (isOutside() && SKIES[room().sky]) skyName = room().sky;
+  if (isOutside() && SKIES[room().sky] && room().sky != skyName) chooseSky(room().sky);
+  guy.y = -GUY_HEIGHT; // drops in from the top
+  guy.onGround = false;
 }
 
 function setPlacingDoor(on) {

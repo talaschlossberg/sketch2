@@ -101,6 +101,7 @@ function setup() {
   loadDoorPhoto();
   loadThings();
   hookThings();
+  hookArt();
   hookSkyButtons();
 }
 
@@ -112,7 +113,8 @@ function draw() {
   image(room().ink, 0, 0, width, height);
 
   drawDoorHint();
-  if (!trip && !mapOpen) moveGuy();
+  if (!trip && !mapOpen && !editingFrame) moveGuy();
+  drawFrameDraft();
   drawOpening();
   drawGuy();
   drawTrip();
@@ -278,9 +280,12 @@ function resetLines() {
 }
 
 function mousePressed(e) {
-  if (e && e.target && e.target.tagName != "CANVAS") return;
+  if (e && e.target && e.target != drawingContext.canvas) return; // buttons, the map, the art editor
   if (placingDoor) return placeDoor(mouseX, mouseY);
   if (placingThing) return placeThing(mouseX, mouseY);
+  if (placingFrame) return startFrame(mouseX, mouseY);
+  let f = frameAt(mouseX, mouseY);
+  if (f) return openArtEditor(f);
   drawing = [{ x: mouseX, y: mouseY }];
   drawing.seed = random(1000);
   lines.push(drawing);
@@ -288,6 +293,11 @@ function mousePressed(e) {
 }
 
 function mouseDragged() {
+  if (frameDraft) {
+    frameDraft.x1 = mouseX;
+    frameDraft.y1 = mouseY;
+    return false;
+  }
   if (!drawing) return;
   let last = drawing[drawing.length - 1];
   if (dist(last.x, last.y, mouseX, mouseY) > 4) {
@@ -298,6 +308,7 @@ function mouseDragged() {
 }
 
 function mouseReleased() {
+  if (frameDraft) return finishFrame();
   if (drawing && drawing.length < 2) {
     lines.pop();
     room().history.pop();
@@ -315,6 +326,8 @@ function drawInk() {
   ink.noStroke();
   ink.fill(inkHere());
   let fixed = roomDrawing();
+  for (let f of room().frames) inkFrame(ink, f);
+  ink.fill(inkHere());
   for (let l of [...solidLines(), ...fixed, ...lines]) inkLine(ink, l);
   for (let t of room().things) inkThing(ink, t);
   for (let d of doorsHere()) inkDoor(ink, d);
@@ -368,7 +381,7 @@ function keyPressed() {
     return false; // don't scroll the page
   }
   if ((key == "z" || key == "Z") && (keyIsDown(CONTROL) || keyIsDown(91))) undo();
-  if ((key == "m" || key == "M") && !document.activeElement.isContentEditable) toggleMap();
+  if ((key == "m" || key == "M") && !document.activeElement.isContentEditable && !editingFrame) toggleMap();
 }
 
 function undo() {
@@ -376,6 +389,7 @@ function undo() {
   if (last == "line") lines.pop();
   if (last == "door") room().doors.pop();
   if (last == "thing") room().things.pop();
+  if (last == "frame") room().frames.pop();
   inkDirty = true;
   saveWorld();
 }

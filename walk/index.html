@@ -19,6 +19,7 @@
       <button id="mapButton">Map</button>
       <button id="door">Add door</button>
       <button id="thing">Add thing</button>
+      <button id="frame">Add frame</button>
       <button id="choose">Choose folder</button>
       <button id="turn">Turn around</button>
       <button id="undo">Undo</button>
@@ -40,6 +41,30 @@
       <span>Pick something to put down, then click on a line.</span>
       <div class="choices"></div>
       <div class="choices"><button id="noThing">Never mind</button></div>
+    </div>
+    <div id="artEditor" hidden>
+      <div class="art-panel" role="dialog" aria-label="Make the art for this frame">
+        <div class="art-tools">
+          <div id="artPens" class="pens"></div>
+          <div id="artSizes" class="sizes">
+            <button data-size="3" aria-label="Thin pen"><i style="--dot: 4px"></i></button>
+            <button data-size="6" aria-label="Medium pen"><i style="--dot: 8px"></i></button>
+            <button data-size="16" aria-label="Thick pen"><i style="--dot: 14px"></i></button>
+            <button data-size="40" aria-label="Brush"><i style="--dot: 22px"></i></button>
+          </div>
+          <button id="artEraser">Eraser</button>
+          <button id="artPhoto">Add photo</button>
+          <input id="artPhotoInput" type="file" accept="image/*" hidden>
+          <button id="artClear">Clear</button>
+        </div>
+        <canvas id="artCanvas"></canvas>
+        <div class="art-actions">
+          <button id="artDelete">Delete frame</button>
+          <span class="spacer"></span>
+          <button id="artCancel">Cancel</button>
+          <button id="artDone" class="primary">Hang it</button>
+        </div>
+      </div>
     </div>
     <div id="map" hidden>
       <div id="mapBar">
@@ -64,6 +89,7 @@
     <script src="rooms.js"></script>
     <script src="map.js"></script>
     <script src="things.js"></script>
+    <script src="art.js"></script>
     <script src="sketch.js"></script>
   </body>
 </html>
