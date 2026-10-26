@@ -8,16 +8,21 @@
     <link rel="stylesheet" type="text/css" href="style.css">
   </head>
   <body>
-    <div id="hint">Draw lines with the mouse or your finger. Arrow keys walk, up jumps.</div>
+    <div id="hint">Draw lines with the mouse or your finger. Arrow keys walk, up jumps. Drop a folder of frames anywhere to swap him out.</div>
     <div id="tools">
+      <button id="choose">Choose folder</button>
+      <button id="turn">Turn around</button>
       <button id="undo">Undo</button>
       <button id="clear">Clear</button>
     </div>
+    <input id="folder" type="file" webkitdirectory multiple accept="image/*" hidden>
+    <div id="status" hidden></div>
     <div id="pad">
       <button data-key="left">&#9664;</button>
       <button data-key="up">&#9650;</button>
       <button data-key="right">&#9654;</button>
     </div>
+    <script src="frames.js"></script>
     <script src="sketch.js"></script>
   </body>
 </html>

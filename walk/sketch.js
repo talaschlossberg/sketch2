@@ -1,15 +1,13 @@
 // Walk: draw lines, then walk the little guy along them with the arrow keys.
-// Frames are walk/frames/walk1.png ... walk5.png, drawn facing left.
-// The legs look alike, so five frames cover one step and loop.
+// He starts with walk/frames/walk1.png ... walk5.png, drawn facing left.
+// Choose folder (or drop a folder on the page) swaps in any other sequence;
+// frames.js cleans the frames up and works out how far each one travels.
 
-let FRAME_COUNT = 5;
-let DRAWN_FACING = -1;
-let STANDING_FRAME = 2;
-let JUMPING_FRAME = 4;
+let BUILT_IN_FRAMES = 5;
 
-let frames = [];
+let walker = null; // what prepareFrames returns
+let drawnFacing = -1; // which way the frames are drawn: -1 left, 1 right
 let framesFailed = false;
-let crop; // shared box around the drawing in every frame, so his feet stay put
 
 let lines = []; // every line is a list of {x, y} points
 let drawing = null;
@@ -28,40 +26,69 @@ let SPEED = 3;
 let GRAVITY = 0.6;
 let JUMP = 11;
 let STEP_UP = 18; // tallest bump he can step onto without jumping
-let PIXELS_PER_FRAME = (GUY_HEIGHT * 0.41) / FRAME_COUNT; // one step is about 0.41 of his height
 
 let held = { left: false, right: false, up: false };
 
 // p5's loadImage fetches the file first, which some hosts block,
-// so the frames are loaded as plain images and copied into p5 images
-function loadFrames() {
-  let loads = [];
-  for (let n = 1; n <= FRAME_COUNT; n++) {
-    loads.push(new Promise((done, fail) => {
-      let el = new Image();
-      el.onload = () => done(el);
-      el.onerror = fail;
-      el.src = frameUrl(n);
-    }));
+// so frames are loaded as plain images and copied into p5 images
+async function loadBuiltInFrames() {
+  let saved = await rememberedFrames();
+  if (saved && saved.files.length) {
+    drawnFacing = saved.drawnFacing;
+    return useFiles(saved.files.map((f) => Object.assign(f.blob, { label: f.name })), false);
   }
-  Promise.all(loads).then((els) => {
-    let imgs = els.map((el) => {
-      let img = createImage(el.naturalWidth, el.naturalHeight);
-      img.drawingContext.drawImage(el, 0, 0);
-      return img;
-    });
-    crop = findCrop(imgs);
-    frames = imgs;
-  }, () => (framesFailed = true));
+  try {
+    let els = [];
+    for (let n = 1; n <= BUILT_IN_FRAMES; n++) els.push(await urlToImage(frameUrl(n)));
+    walker = prepareFrames(els);
+  } catch (e) {
+    framesFailed = true;
+  }
+}
+
+function urlToImage(url) {
+  return new Promise((done, fail) => {
+    let el = new Image();
+    el.onload = () => done(el);
+    el.onerror = fail;
+    el.src = url;
+  });
 }
 
 function frameUrl(n) {
   return "frames/walk" + n + ".png";
 }
 
+async function useFiles(files, remember) {
+  files = sortByName(files.filter((f) => isImageFile({ name: f.label || f.name })));
+  if (files.length == 0) {
+    showStatus("No pictures in there. Pick a folder of PNG or JPG frames.");
+    return;
+  }
+  showStatus("Loading " + files.length + " frames…");
+  try {
+    let els = [];
+    for (let f of files) els.push(await fileToImage(f));
+    walker = prepareFrames(els);
+    framesFailed = false;
+    showStatus(files.length + " frames loaded. If he walks backwards, press Turn around.", 5000);
+    if (remember) rememberFrames(files, drawnFacing);
+  } catch (e) {
+    showStatus("Couldn't open those pictures. Try PNG or JPG files.");
+  }
+}
+
+function showStatus(text, ms) {
+  let el = document.getElementById("status");
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(showStatus.timer);
+  if (ms) showStatus.timer = setTimeout(() => (el.hidden = true), ms);
+}
+
 function setup() {
   createCanvas(windowWidth, windowHeight);
-  loadFrames();
+  loadBuiltInFrames();
   resetLines();
   guy.y = height - 60;
   hookButtons();
@@ -164,7 +191,7 @@ function drawGuy() {
   push();
   translate(guy.x, guy.y);
 
-  if (frames.length == 0) {
+  if (!walker) {
     if (!framesFailed) {
       pop();
       return;
@@ -172,13 +199,13 @@ function drawGuy() {
     scale(guy.facing, 1);
     drawStandIn();
   } else {
-    scale(guy.facing * DRAWN_FACING, 1);
-    let i = floor(guy.stride / PIXELS_PER_FRAME) % frames.length;
-    if (guy.stride == 0) i = STANDING_FRAME;
-    if (!guy.onGround) i = JUMPING_FRAME;
-    let s = GUY_HEIGHT / crop.h;
-    let w = crop.w * s;
-    image(frames[i], -w / 2, -GUY_HEIGHT, w, GUY_HEIGHT, crop.x, crop.y, crop.w, crop.h);
+    let { imgs, crop } = walker;
+    scale(guy.facing * drawnFacing, 1);
+    let i = floor(guy.stride / (walker.stepPerFrame * GUY_HEIGHT)) % imgs.length;
+    if (guy.stride == 0) i = walker.standing;
+    if (!guy.onGround) i = walker.jumping;
+    let w = (crop.w * GUY_HEIGHT) / crop.h;
+    image(imgs[i], -w / 2, -GUY_HEIGHT, w, GUY_HEIGHT, crop.x, crop.y, crop.w, crop.h);
   }
   pop();
 }
@@ -200,27 +227,6 @@ function drawStandIn() {
   line(0, neck + 10, sin(swing) * 35, neck + 10 + cos(swing) * 35);
   circle(0, neck - 14, 28);
   line(6, neck - 16, 10, neck - 16);
-}
-
-// smallest box that holds the non-transparent pixels of every frame
-function findCrop(imgs) {
-  let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
-  for (let img of imgs) {
-    img.loadPixels();
-    let w = img.width;
-    for (let y = 0; y < img.height; y++) {
-      for (let x = 0; x < w; x++) {
-        if (img.pixels[(y * w + x) * 4 + 3] > 20) {
-          if (x < x0) x0 = x;
-          if (x > x1) x1 = x;
-          if (y < y0) y0 = y;
-          if (y > y1) y1 = y;
-        }
-      }
-    }
-  }
-  if (x1 < 0) return { x: 0, y: 0, w: imgs[0].width, h: imgs[0].height };
-  return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
 // ---- drawing lines ----
@@ -265,6 +271,33 @@ function windowResized() {
 function hookButtons() {
   document.getElementById("undo").onclick = undo;
   document.getElementById("clear").onclick = resetLines;
+
+  let picker = document.getElementById("folder");
+  if (!("webkitdirectory" in picker)) picker.removeAttribute("webkitdirectory"); // phones: pick the files instead
+  document.getElementById("choose").onclick = () => picker.click();
+  picker.onchange = () => {
+    useFiles([...picker.files], true);
+    picker.value = "";
+  };
+
+  document.getElementById("turn").onclick = async () => {
+    drawnFacing *= -1;
+    let saved = await rememberedFrames();
+    if (saved) rememberFrames(saved.files.map((f) => Object.assign(f.blob, { label: f.name })), drawnFacing);
+  };
+
+  document.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    document.body.classList.add("dropping");
+  });
+  document.addEventListener("dragleave", (e) => {
+    if (!e.relatedTarget) document.body.classList.remove("dropping");
+  });
+  document.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    document.body.classList.remove("dropping");
+    useFiles(await droppedFiles(e.dataTransfer), true);
+  });
   for (let b of document.querySelectorAll("#pad button")) {
     let k = b.dataset.key;
     let down = (e) => { e.preventDefault(); held[k] = true; b.classList.add("on"); };

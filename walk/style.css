@@ -13,9 +13,9 @@ canvas {
 
 #hint {
   position: fixed;
-  top: 12px;
+  top: 64px;
   left: 16px;
-  right: 160px;
+  right: 16px;
   color: #6b6357;
   font-size: 14px;
   pointer-events: none;
@@ -24,9 +24,32 @@ canvas {
 #tools {
   position: fixed;
   top: 8px;
+  left: 16px;
   right: 16px;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+#status {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #222;
+  color: #fff;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+body.dropping {
+  outline: 6px dashed #222;
+  outline-offset: -12px;
 }
 
 #pad {
@@ -63,6 +86,11 @@ button:active, button.on {
 }
 
 /* the on-screen arrows are for touch screens */
+@media (max-width: 600px) {
+  #hint { top: 112px; }
+  #status { bottom: 88px; }
+}
+
 @media (hover: hover) and (pointer: fine) {
   #pad { display: none; }
 }
