@@ -44,7 +44,7 @@
       </div>
       <span class="bar-gap"></span>
       <button id="mapButton">Map</button>
-      <button id="choose">New walker</button>
+      <button id="choose">Walker</button>
       <button id="undo">Undo</button>
       <button id="clear">Clear board</button>
       <button id="help" title="Keys" aria-label="Keys">?</button>
@@ -60,6 +60,15 @@
         <button data-kind="outside">New outside</button>
         <button id="pickOnMap">Pick on the map</button>
         <button id="notYet">Not yet</button>
+      </div>
+    </div>
+    <div id="walkerChoice" hidden>
+      <span>Who's walking?</span>
+      <div class="choices">
+        <button data-walker="film" class="thing-pick"><img src="frames/walk03.png" alt="">Her (film)</button>
+        <button data-walker="drawn" class="thing-pick"><img src="drawn/walk3.png" alt="">Him (drawing)</button>
+        <button id="walkerFolder">Choose a folder of frames</button>
+        <button id="walkerCancel">Never mind</button>
       </div>
     </div>
     <div id="thingChoice" hidden>

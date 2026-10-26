@@ -35,19 +35,48 @@ let upTapped = false; // a quick tap of up can fall between two frames, so it's 
 
 // p5's loadImage fetches the file first, which some hosts block,
 // so frames are loaded as plain images and copied into p5 images
+// the walkers that come with the page; a folder of your own can be loaded too
+let WALKERS = {
+  film: { label: "Her (film)", frames: 22, facing: 1, url: (n) => frameUrl(n) },
+  drawn: { label: "Him (drawing)", frames: 5, facing: -1, url: (n) => drawnUrl(n) },
+};
+
 async function loadBuiltInFrames() {
-  let saved = await rememberedFrames();
-  if (saved && saved.files.length) {
-    drawnFacing = saved.drawnFacing;
-    return useFiles(saved.files.map((f) => Object.assign(f.blob, { label: f.name })), false);
+  let choice = "film";
+  try {
+    choice = localStorage.getItem("walk-walker") || "film";
+  } catch (e) {}
+  if (choice == "folder") {
+    let saved = await rememberedFrames();
+    if (saved && saved.files.length) {
+      drawnFacing = saved.drawnFacing;
+      return useFiles(saved.files.map((f) => Object.assign(f.blob, { label: f.name })), false);
+    }
+    choice = "film";
   }
+  return useWalker(WALKERS[choice] ? choice : "film");
+}
+
+// p5's loadImage fetches the file first, which some hosts block,
+// so frames are loaded as plain images and copied into p5 images
+async function useWalker(name) {
+  let w = WALKERS[name];
   try {
     let els = [];
-    for (let n = 1; n <= BUILT_IN_FRAMES; n++) els.push(await urlToImage(frameUrl(n)));
+    for (let n = 1; n <= w.frames; n++) els.push(await urlToImage(w.url(n)));
     walker = prepareFrames(els);
+    drawnFacing = w.facing;
+    framesFailed = false;
+    rememberWalker(name);
   } catch (e) {
     framesFailed = true;
   }
+}
+
+function rememberWalker(name) {
+  try {
+    localStorage.setItem("walk-walker", name);
+  } catch (e) {}
 }
 
 function urlToImage(url) {
@@ -57,6 +86,10 @@ function urlToImage(url) {
     el.onerror = fail;
     el.src = url;
   });
+}
+
+function drawnUrl(n) {
+  return "drawn/walk" + n + ".png";
 }
 
 function frameUrl(n) {
@@ -76,7 +109,10 @@ async function useFiles(files, remember) {
     walker = prepareFrames(els);
     framesFailed = false;
     showStatus(files.length + " frames loaded.", 4000);
-    if (remember) rememberFrames(files, drawnFacing);
+    if (remember) {
+      rememberFrames(files, drawnFacing);
+      rememberWalker("folder");
+    }
   } catch (e) {
     showStatus("Couldn't open those pictures. Try PNG or JPG files.");
   }
@@ -503,7 +539,19 @@ function hookButtons() {
 
   let picker = document.getElementById("folder");
   if (!("webkitdirectory" in picker)) picker.removeAttribute("webkitdirectory"); // phones: pick the files instead
-  document.getElementById("choose").onclick = () => picker.click();
+  let choice = document.getElementById("walkerChoice");
+  document.getElementById("choose").onclick = () => (choice.hidden = !choice.hidden);
+  for (let b of choice.querySelectorAll("[data-walker]")) {
+    b.onclick = () => {
+      choice.hidden = true;
+      useWalker(b.dataset.walker);
+    };
+  }
+  document.getElementById("walkerFolder").onclick = () => {
+    choice.hidden = true;
+    picker.click();
+  };
+  document.getElementById("walkerCancel").onclick = () => (choice.hidden = true);
   picker.onchange = () => {
     useFiles([...picker.files], true);
     picker.value = "";
