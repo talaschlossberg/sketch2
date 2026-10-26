@@ -1,7 +1,7 @@
 // Frames: load a walk sequence from a folder, clean it up, and work out
 // how far he travels per frame. Used by sketch.js.
 
-let PAPER = [244, 239, 228];
+let PAPER = [255, 255, 255];
 
 // Turn plain <img> elements into p5 images plus everything drawGuy needs.
 function prepareFrames(els) {

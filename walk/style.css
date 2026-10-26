@@ -2,7 +2,7 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #f4efe4;
+  background: #fff;
   font-family: -apple-system, Helvetica, Arial, sans-serif;
 }
 
@@ -16,7 +16,7 @@ canvas {
   top: 64px;
   left: 16px;
   right: 16px;
-  color: #6b6357;
+  color: #777;
   font-size: 14px;
   pointer-events: none;
 }

@@ -9,8 +9,12 @@ let walker = null; // what prepareFrames returns
 let drawnFacing = -1; // which way the frames are drawn: -1 left, 1 right
 let framesFailed = false;
 
-let lines = []; // every line is a list of {x, y} points
+let lines = []; // every line you draw: a list of {x, y} points, plus a seed for its wobble
 let drawing = null;
+let FLOOR_GAP = 40; // the floor runs along the bottom of the window, this far up
+let INK = 17;
+let ink; // the lines, drawn once into their own layer and redrawn only when they change
+let inkDirty = true;
 
 let guy = {
   x: 120,
@@ -90,23 +94,15 @@ function setup() {
   createCanvas(windowWidth, windowHeight);
   loadBuiltInFrames();
   resetLines();
-  guy.y = height - 60;
+  guy.y = floorY();
   hookButtons();
 }
 
 function draw() {
-  background("#f4efe4");
+  background(255);
 
-  stroke("#222");
-  strokeWeight(4);
-  strokeJoin(ROUND);
-  strokeCap(ROUND);
-  noFill();
-  for (let l of lines) {
-    beginShape();
-    for (let p of l) vertex(p.x, p.y);
-    endShape();
-  }
+  if (inkDirty) drawInk();
+  image(ink, 0, 0, width, height);
 
   moveGuy();
   drawGuy();
@@ -155,9 +151,11 @@ function moveGuy() {
 
   if (dir == 0 && guy.onGround) guy.stride = 0;
 
-  // walked off the edge of the world: drop back in from the top
-  if (guy.y > height + GUY_HEIGHT || guy.x < -50 || guy.x > width + 50) {
-    guy.x = constrain(guy.x, 40, width - 40);
+  // the sides of the window are walls
+  guy.x = constrain(guy.x, 20, width - 20);
+
+  // fell out of the world: drop back in from the top
+  if (guy.y > height + GUY_HEIGHT) {
     guy.y = -GUY_HEIGHT;
     guy.vy = 0;
     guy.onGround = false;
@@ -173,7 +171,7 @@ function wallAt(x) {
 // highest line at x that is at or below fromY
 function groundBelow(x, fromY) {
   let best = null;
-  for (let l of lines) {
+  for (let l of [floorLine(), ...lines]) {
     for (let i = 1; i < l.length; i++) {
       let a = l[i - 1];
       let b = l[i];
@@ -231,26 +229,94 @@ function drawStandIn() {
 
 // ---- drawing lines ----
 
+function floorY() {
+  return height - FLOOR_GAP;
+}
+
+// the window can change size after the page opens, so the floor is worked out each time
+function floorLine() {
+  let l = [{ x: -10, y: floorY() }, { x: width + 10, y: floorY() }];
+  l.seed = 7;
+  return l;
+}
+
 function resetLines() {
-  lines = [[{ x: 0, y: height - 40 }, { x: width, y: height - 40 }]];
+  lines = [];
+  inkDirty = true;
 }
 
 function mousePressed(e) {
   if (e && e.target && e.target.tagName != "CANVAS") return;
   drawing = [{ x: mouseX, y: mouseY }];
+  drawing.seed = random(1000);
   lines.push(drawing);
 }
 
 function mouseDragged() {
   if (!drawing) return;
   let last = drawing[drawing.length - 1];
-  if (dist(last.x, last.y, mouseX, mouseY) > 4) drawing.push({ x: mouseX, y: mouseY });
+  if (dist(last.x, last.y, mouseX, mouseY) > 4) {
+    drawing.push({ x: mouseX, y: mouseY });
+    inkDirty = true;
+  }
   return false;
 }
 
 function mouseReleased() {
   if (drawing && drawing.length < 2) lines.pop();
   drawing = null;
+  inkDirty = true;
+}
+
+function drawInk() {
+  if (!ink || ink.width != width || ink.height != height) ink = createGraphics(width, height);
+  ink.clear();
+  ink.noStroke();
+  ink.fill(INK);
+  for (let l of [floorLine(), ...lines]) inkLine(ink, l);
+  inkDirty = false;
+}
+
+// A pen line like the ones he's drawn with: smoothed, wobbling a little,
+// thicker and thinner along its length, and tapering at the ends.
+function inkLine(g, pts, seed = pts.seed) {
+  pts = roundCorners(pts);
+  let spots = [];
+  let d = 0;
+  for (let i = 1; i < pts.length; i++) {
+    let a = pts[i - 1];
+    let b = pts[i];
+    let len = dist(a.x, a.y, b.x, b.y);
+    let nx = -(b.y - a.y) / (len || 1);
+    let ny = (b.x - a.x) / (len || 1);
+    for (let t = 0; t < len; t += 0.75) {
+      let wobble = (noise(seed, d * 0.01) - 0.5) * 3 + (noise(seed + 40, d * 0.08) - 0.5) * 1.2 + (noise(seed + 60, d * 0.5) - 0.5) * 0.4;
+      spots.push({ x: lerp(a.x, b.x, t / len) + nx * wobble, y: lerp(a.y, b.y, t / len) + ny * wobble, d });
+      d += 0.75;
+    }
+  }
+  for (let s of spots) {
+    let taper = min(1, s.d / 10, (d - s.d) / 10);
+    let w = (1.2 + noise(seed + 80, s.d * 0.02) * 1.3) * (0.5 + 0.5 * taper);
+    g.circle(s.x, s.y, w);
+  }
+}
+
+// round off the corners of a line drawn with the mouse
+function roundCorners(pts) {
+  for (let pass = 0; pass < 2; pass++) {
+    if (pts.length < 3) return pts;
+    let out = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      let a = pts[i];
+      let b = pts[i + 1];
+      out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+      out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+    }
+    out.push(pts[pts.length - 1]);
+    pts = out;
+  }
+  return pts;
 }
 
 function keyPressed() {
@@ -261,11 +327,15 @@ function keyPressed() {
 }
 
 function undo() {
-  if (lines.length > 1) lines.pop();
+  lines.pop();
+  inkDirty = true;
 }
 
 function windowResized() {
+  let wasOnFloor = guy.onGround && abs(guy.y - floorY()) < 1;
   resizeCanvas(windowWidth, windowHeight);
+  if (wasOnFloor) guy.y = floorY();
+  inkDirty = true;
 }
 
 function hookButtons() {
