@@ -6,7 +6,7 @@ let erasing = false; // dragging the eraser over lines
 let ERASER = 14; // radius
 
 let TOOL_HELP = {
-  select: "Drag anything to move it: lines, doors, things, frames, pictures and words.",
+  select: "Drag anything to move it. Drag the corner square of what you picked to resize it, or press + and -.",
   text: "Click where the words should go, then type. Click words to change them.",
   image: "Drag a box where the picture should go, then choose a photo.",
   frame: "Drag on the wall to put up a frame for art.",
@@ -16,6 +16,7 @@ let TOOL_HELP = {
 };
 
 function setTool(name) {
+  if (name != "select") selected = null;
   if (pathDraft && name != "path") finishPath();
   tool = name;
   placingDoor = name == "door";
@@ -59,9 +60,10 @@ function roomSnapshot() {
   let r = room();
   return {
     lines: r.lines.map((l) => seeded(l.map((p) => ({ ...p })), l.seed)),
-    doors: [...r.doors],
-    things: [...r.things],
-    frames: [...r.frames],
+    // copies, so moving or resizing something afterwards can't change what Undo puts back
+    doors: r.doors.map((d) => ({ ...d })),
+    things: r.things.map((t) => ({ ...t })),
+    frames: r.frames.map((f) => ({ ...f })),
     texts: r.texts.map((t) => ({ ...t })),
   };
 }
@@ -80,8 +82,7 @@ function eraseStart(x, y) {
   let before = roomSnapshot();
   let r = room();
   // a door, thing or frame under the eraser goes in one click
-  let { w: dw, h: dh } = doorSize();
-  let door = [...r.doors].reverse().find((d) => abs(x - d.x) < dw / 2 && y < d.y && y > d.y - dh);
+  let door = [...r.doors].reverse().find((d) => abs(x - d.x) < doorSize(d).w / 2 && y < d.y && y > d.y - doorSize(d).h);
   let thing = [...r.things].reverse().find((t) => {
     let { w, h } = thingSize(t);
     return abs(x - t.x) < w / 2 && y < t.y && y > t.y - h;

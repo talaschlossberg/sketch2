@@ -37,7 +37,7 @@ function loadThings() {
 
 function thingSize(t) {
   let pic = thingPictures[t.type];
-  let h = GUY_HEIGHT * THINGS[t.type].height;
+  let h = GUY_HEIGHT * THINGS[t.type].height * (t.scale || 1);
   if (THINGS[t.type].drawn) return { w: h * THINGS[t.type].aspect, h };
   let w = pic ? (h * pic.width) / pic.height : h * 0.84;
   return { w, h };

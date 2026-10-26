@@ -56,8 +56,10 @@ function floorFor(kind) {
   return kind == "outside" ? height - FLOOR_GAP : round(height * 0.8);
 }
 
-function doorSize() {
-  return { w: GUY_HEIGHT * 1.25 * (300 / 630), h: GUY_HEIGHT * 1.25 };
+// a door's size; d.scale makes one bigger or smaller
+function doorSize(d) {
+  let k = (d && d.scale) || 1;
+  return { w: GUY_HEIGHT * 1.25 * (300 / 630) * k, h: GUY_HEIGHT * 1.25 * k };
 }
 
 function doorPhotoUrl() {
@@ -224,7 +226,7 @@ function clipTo(r, paint) {
 
 // a door: the photo once it has loaded, until then one drawn in pen
 function inkDoor(g, d) {
-  let { w, h } = doorSize();
+  let { w, h } = doorSize(d);
   let x = d.x - w / 2;
   let y = d.y - h;
   if (doorPhoto) {
@@ -249,8 +251,7 @@ function inkHere() {
 
 function doorNear() {
   if (!guy.onGround || trip) return null;
-  let { w } = doorSize();
-  return doorsHere().find((d) => abs(guy.x - d.x) < w * 0.35 && abs(guy.y - d.y) < 12) || null;
+  return doorsHere().find((d) => abs(guy.x - d.x) < doorSize(d).w * 0.35 && abs(guy.y - d.y) < 12) || null;
 }
 
 function goThrough(door) {
@@ -266,8 +267,8 @@ function goThrough(door) {
 // the door swinging open, drawn behind her so she steps into the doorway
 function drawOpening() {
   if (!trip) return;
-  let { w, h } = doorSize();
   let d = trip.door;
+  let { w, h } = doorSize(d);
   if (!trip.switched && doorPhoto) {
     // the grey panel swings in on its hinges, leaving the dark doorway in its frame
     let open = constrain(trip.t / 0.35, 0, 1);
@@ -320,6 +321,7 @@ function drawTrip() {
 
 // she arrives at the door that leads back where she came from, if there is one
 function enterRoom(i, fromId) {
+  selected = null;
   roomIndex = i;
   settle(room());
   lines = room().lines;
@@ -341,7 +343,7 @@ function enterRoom(i, fromId) {
 function drawDoorHint() {
   let d = doorNear();
   if (!d) return;
-  let { h } = doorSize();
+  let { h } = doorSize(d);
   let y = d.y - h - 18 + sin(frameCount * 0.1) * 3;
   stroke(inkHere());
   strokeWeight(2.5);

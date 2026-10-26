@@ -182,6 +182,7 @@ function draw() {
   drawTVHint();
   drawTrip();
   drawEraserCursor();
+  drawSelection();
   drawSelectHover();
   drawWatch();
   showRoomName();
@@ -389,6 +390,10 @@ function mousePressed(e) {
 }
 
 function mouseDragged() {
+  if (scaling) {
+    scaleTo(mouseX, mouseY);
+    return false;
+  }
   if (moving) {
     moveItemTo(mouseX, mouseY);
     return false;
@@ -417,6 +422,7 @@ function mouseDragged() {
 }
 
 function mouseReleased() {
+  if (scaling) return endScale();
   if (moving) return endMove();
   if (shapeDraft) return finishShape();
   if (erasing) return eraseEnd();
@@ -496,6 +502,8 @@ function roundCorners(pts) {
 function keyPressed() {
   if (typing()) return;
   if (keyCode == ENTER && pathDraft) return finishPath();
+  if (tool == "select" && (key == "+" || key == "=")) return nudgeScale(1.1);
+  if (tool == "select" && (key == "-" || key == "_")) return nudgeScale(1 / 1.1);
   if (keyCode == UP_ARROW) upTapped = true;
   if (keyCode == LEFT_ARROW || keyCode == RIGHT_ARROW || keyCode == UP_ARROW || keyCode == DOWN_ARROW) {
     return false; // don't scroll the page
@@ -506,6 +514,7 @@ function keyPressed() {
 
 function undo() {
   let last = room().history.pop();
+  selected = null;
   if (last && last.snapshot) restoreSnapshot(last.snapshot);
   if (last == "line") lines.pop();
   if (last == "door") room().doors.pop();

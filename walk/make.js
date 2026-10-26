@@ -226,13 +226,12 @@ function itemAt(x, y) {
   let r = room();
   let t = textAt(x, y);
   if (t) return { item: t, kind: "text" };
-  let { w: dw, h: dh } = doorSize();
   let thing = [...r.things].reverse().find((t) => {
     let { w, h } = thingSize(t);
     return abs(x - t.x) < w / 2 && y < t.y && y > t.y - h;
   });
   if (thing) return { item: thing, kind: "thing" };
-  let door = [...r.doors].reverse().find((d) => abs(x - d.x) < dw / 2 && y < d.y && y > d.y - dh);
+  let door = [...r.doors].reverse().find((d) => abs(x - d.x) < doorSize(d).w / 2 && y < d.y && y > d.y - doorSize(d).h);
   if (door) return { item: door, kind: "door" };
   let frame = frameAt(x, y);
   if (frame) return { item: frame, kind: "frame" };
@@ -251,10 +250,137 @@ function distToSegment(x, y, a, b) {
   return dist(x, y, a.x + t * dx, a.y + t * dy);
 }
 
+// a click picks something up (and selects it); the corner handle of a selection resizes it
 function startMove(x, y) {
+  if (selected && stillHere(selected)) {
+    let h = handleOf(selected);
+    if (dist(x, y, h.x, h.y) < 14) return startScale(x, y);
+  }
   let hit = itemAt(x, y);
+  selected = hit;
   if (!hit) return;
   moving = { ...hit, from: { x, y }, before: roomSnapshot(), moved: false };
+}
+
+// ---- resizing ----
+
+let selected = null; // { item, kind } picked with the select tool
+let scaling = null;
+let lastWheel = 0;
+let lastNudged = null;
+
+function stillHere(sel) {
+  let r = room();
+  let list = { thing: r.things, door: r.doors, frame: r.frames, text: r.texts, line: lines }[sel.kind];
+  return list && list.includes(sel.item);
+}
+
+function boxOf(sel) {
+  let it = sel.item;
+  if (sel.kind == "thing" || sel.kind == "door") {
+    let { w, h } = sel.kind == "thing" ? thingSize(it) : doorSize(it);
+    return { x: it.x - w / 2, y: it.y - h, w, h };
+  }
+  if (sel.kind == "frame") return { x: it.x, y: it.y, w: it.w, h: it.h };
+  if (sel.kind == "text") return { x: it.x, y: it.y - it.size, w: textWidthOf(it), h: it.size * 1.25 };
+  let xs = it.map((p) => p.x);
+  let ys = it.map((p) => p.y);
+  return { x: min(xs), y: min(ys), w: max(xs) - min(xs), h: max(ys) - min(ys) };
+}
+
+// doors and things grow up from where they stand; everything else from its top left
+function anchorOf(sel) {
+  let b = boxOf(sel);
+  if (sel.kind == "thing" || sel.kind == "door") return { x: sel.item.x, y: sel.item.y };
+  return { x: b.x, y: b.y };
+}
+
+function handleOf(sel) {
+  let b = boxOf(sel);
+  if (sel.kind == "thing" || sel.kind == "door") return { x: b.x + b.w + 4, y: b.y - 4 };
+  return { x: b.x + b.w + 4, y: b.y + b.h + 4 };
+}
+
+function sizeNow(sel) {
+  let it = sel.item;
+  if (sel.kind == "thing" || sel.kind == "door") return { scale: it.scale || 1 };
+  if (sel.kind == "frame") return { w: it.w, h: it.h };
+  if (sel.kind == "text") return { size: it.size };
+  return { pts: it.map((p) => ({ x: p.x, y: p.y })) };
+}
+
+// set the size to k times what it was (orig), keeping the anchor still
+function applyScale(sel, orig, anchor, k) {
+  let it = sel.item;
+  if (sel.kind == "thing" || sel.kind == "door") it.scale = constrain(orig.scale * k, 0.2, 6);
+  else if (sel.kind == "frame") {
+    k = constrain(k, 20 / min(orig.w, orig.h), 2400 / max(orig.w, orig.h));
+    it.w = orig.w * k;
+    it.h = orig.h * k;
+  } else if (sel.kind == "text") it.size = constrain(orig.size * k, 8, 400);
+  else orig.pts.forEach((p, i) => {
+    it[i].x = anchor.x + (p.x - anchor.x) * k;
+    it[i].y = anchor.y + (p.y - anchor.y) * k;
+  });
+  inkDirty = true;
+}
+
+function startScale(x, y) {
+  let anchor = anchorOf(selected);
+  let h = handleOf(selected);
+  scaling = { sel: selected, anchor, from: max(10, dist(anchor.x, anchor.y, h.x, h.y)), orig: sizeNow(selected), before: roomSnapshot() };
+}
+
+function scaleTo(x, y) {
+  let s = scaling;
+  applyScale(s.sel, s.orig, s.anchor, dist(s.anchor.x, s.anchor.y, x, y) / s.from);
+}
+
+function endScale() {
+  room().history.push({ snapshot: scaling.before });
+  scaling = null;
+  saveWorld();
+}
+
+// + and - keys, or the mouse wheel, nudge the selection's size
+function nudgeScale(k) {
+  if (!selected || !stillHere(selected)) return;
+  // a run of nudges to one thing is one step for Undo
+  if (millis() - lastWheel > 600 || lastNudged != selected.item) room().history.push({ snapshot: roomSnapshot() });
+  lastWheel = millis();
+  lastNudged = selected.item;
+  applyScale(selected, sizeNow(selected), anchorOf(selected), k);
+  saveWorld();
+}
+
+function mouseWheel(e) {
+  if (tool != "select" || !selected || !stillHere(selected) || mapOpen || editingFrame || watching) return;
+  let b = boxOf(selected);
+  if (mouseX < b.x - 20 || mouseX > b.x + b.w + 20 || mouseY < b.y - 20 || mouseY > b.y + b.h + 20) return;
+  nudgeScale(exp(-e.delta * 0.0015));
+  return false;
+}
+
+function drawSelection() {
+  if (tool != "select" || !selected) return;
+  if (!stillHere(selected)) return (selected = null);
+  let b = boxOf(selected);
+  let h = handleOf(selected);
+  push();
+  noFill();
+  stroke(255);
+  strokeWeight(3);
+  rect(b.x - 4, b.y - 4, b.w + 8, b.h + 8);
+  stroke(30);
+  strokeWeight(1.5);
+  drawingContext.setLineDash([6, 4]);
+  rect(b.x - 4, b.y - 4, b.w + 8, b.h + 8);
+  drawingContext.setLineDash([]);
+  fill(255);
+  stroke(30);
+  strokeWeight(2);
+  rect(h.x - 6, h.y - 6, 12, 12, 2);
+  pop();
 }
 
 function moveItemTo(x, y) {
@@ -290,8 +416,13 @@ function endMove() {
 
 // a move cursor over anything the select tool can pick up
 function drawSelectHover() {
-  let over = tool == "select" && !mapOpen && !editingFrame && (moving || itemAt(mouseX, mouseY));
-  drawingContext.canvas.style.cursor = over ? "move" : "";
+  let cursor = "";
+  if (tool == "select" && !mapOpen && !editingFrame) {
+    let h = selected && stillHere(selected) && handleOf(selected);
+    if (scaling || (h && dist(mouseX, mouseY, h.x, h.y) < 14)) cursor = "nwse-resize";
+    else if (moving || itemAt(mouseX, mouseY)) cursor = "move";
+  }
+  drawingContext.canvas.style.cursor = cursor;
 }
 
 // ---- images, without a frame ----
