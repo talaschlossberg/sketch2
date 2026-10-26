@@ -16,7 +16,6 @@ canvas {
   top: 64px;
   left: 16px;
   right: 16px;
-  color: #777;
   font-size: 14px;
   pointer-events: none;
 }
@@ -30,6 +29,22 @@ canvas {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+#skies {
+  display: flex;
+  gap: 6px;
+  margin-right: auto;
+}
+
+#skies button {
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+#hint {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 #status {

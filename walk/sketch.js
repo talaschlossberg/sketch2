@@ -12,7 +12,6 @@ let framesFailed = false;
 let lines = []; // every line you draw: a list of {x, y} points, plus a seed for its wobble
 let drawing = null;
 let FLOOR_GAP = 40; // the floor runs along the bottom of the window, this far up
-let INK = 17;
 let ink; // the lines, drawn once into their own layer and redrawn only when they change
 let inkDirty = true;
 
@@ -97,10 +96,12 @@ function setup() {
   resetLines();
   guy.y = floorY();
   hookButtons();
+  loadSky();
+  hookSkyButtons();
 }
 
 function draw() {
-  background(255);
+  drawSky();
 
   if (inkDirty) drawInk();
   image(ink, 0, 0, width, height);
@@ -286,7 +287,7 @@ function drawInk() {
   if (!ink || ink.width != width || ink.height != height) ink = createGraphics(width, height);
   ink.clear();
   ink.noStroke();
-  ink.fill(INK);
+  ink.fill(inkColour());
   for (let l of [floorLine(), ...lines]) inkLine(ink, l);
   inkDirty = false;
 }

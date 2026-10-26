@@ -8,8 +8,13 @@
     <link rel="stylesheet" type="text/css" href="style.css">
   </head>
   <body>
-    <div id="hint">Draw lines with the mouse or your finger. Arrow keys walk, up jumps. Drop a folder of frames anywhere to swap him out.</div>
+    <div id="hint">Draw lines with the mouse or your finger. Arrow keys walk, up jumps. Drop a folder of frames anywhere to swap the walker.</div>
     <div id="tools">
+      <div id="skies">
+        <button data-sky="sunset">Sunset</button>
+        <button data-sky="day">Day</button>
+        <button data-sky="night">Night</button>
+      </div>
       <button id="choose">Choose folder</button>
       <button id="turn">Turn around</button>
       <button id="undo">Undo</button>
@@ -23,6 +28,7 @@
       <button data-key="right">&#9654;</button>
     </div>
     <script src="frames.js"></script>
+    <script src="sky.js"></script>
     <script src="sketch.js"></script>
   </body>
 </html>
