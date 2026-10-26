@@ -321,6 +321,7 @@ function drawTrip() {
 // she arrives at the door that leads back where she came from, if there is one
 function enterRoom(i, fromId) {
   roomIndex = i;
+  settle(room());
   lines = room().lines;
   inkDirty = true;
   let back = room().doors.find((d) => d.to == fromId) || (fromId == null && room().doors[0]);
@@ -354,7 +355,7 @@ function drawDoorHint() {
 function placeDoor(x, y) {
   let base = groundBelow(x, y - 30);
   if (base == null) base = floorY();
-  let d = { x: constrain(x, doorSize().w / 2, width - doorSize().w / 2), y: base, seed: random(1000), to: null };
+  let d = { x: constrain(x, doorSize().w / 2, width - doorSize().w / 2), y: base, floor: base >= floorY() - 2, seed: random(1000), to: null };
   room().doors.push(d);
   room().history.push("door");
   inkDirty = true;
@@ -392,7 +393,7 @@ function linkDoor(door, target) {
   let home = rooms.find((r) => r.doors.includes(door));
   if (home && !target.doors.some((d) => d.to == home.id)) {
     let x = max(width * 0.1, doorSize().w / 2 + 12) + target.doors.length * doorSize().w * 1.4;
-    target.doors.push({ x, y: floorFor(target.kind), seed: random(1000), to: home.id });
+    target.doors.push({ x, y: floorFor(target.kind), floor: true, seed: random(1000), to: home.id });
     target.ink = null;
   }
   inkDirty = true;
@@ -474,6 +475,19 @@ async function readWorld() {
   }
 }
 
+// doors and things standing on the floor stay on it when the window changes size,
+// and anything left below the floor or off to the side is brought back within reach
+function settle(r) {
+  let f = floorFor(r.kind);
+  for (let d of [...r.doors, ...r.things]) {
+    if (d.floor || d.y >= f - 2) {
+      d.floor = true;
+      d.y = f;
+    }
+    d.x = constrain(d.x, 20, width - 20);
+  }
+}
+
 function useWorld(world) {
   rooms = world.rooms.map((r) => ({
     ...r,
@@ -490,6 +504,7 @@ function useWorld(world) {
   roomCount = world.count || rooms.length;
   roomIndex = max(0, rooms.findIndex((r) => r.id == world.at));
   lines = room().lines;
+  for (let r of rooms) settle(r);
   inkDirty = true;
   document.body.dataset.room = isOutside() ? "outside" : "inside";
   if (isOutside() && SKIES[room().sky] && room().sky != skyName) chooseSky(room().sky);

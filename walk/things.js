@@ -65,7 +65,7 @@ function thingTops() {
 function placeThing(x, y) {
   let base = groundBelow(x, y - 30);
   if (base == null) base = floorY();
-  room().things.push({ type: placingThing, x, y: base });
+  room().things.push({ type: placingThing, x, y: base, floor: base >= floorY() - 2 });
   room().history.push("thing");
   inkDirty = true;
   setPlacingThing(null);

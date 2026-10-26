@@ -367,6 +367,7 @@ function mouseReleased() {
 
 function drawInk() {
   let r = room();
+  settle(r);
   if (!r.ink || r.ink.width != width || r.ink.height != height) r.ink = createGraphics(width, height);
   let ink = r.ink;
   ink.clear();

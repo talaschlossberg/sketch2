@@ -230,6 +230,7 @@ body[data-using="select"] canvas {
 
 #status {
   position: fixed;
+  z-index: 7;
   left: calc(50% + var(--panel) / 2);
   bottom: 24px;
   transform: translateX(-50%);
@@ -298,6 +299,7 @@ button:active, button.on {
 #doorChoice,
 #thingChoice {
   position: fixed;
+  z-index: 7;
   left: calc(50% + var(--panel) / 2);
   bottom: 24px;
   transform: translateX(-50%);
@@ -323,6 +325,7 @@ button:active, button.on {
 #map {
   position: fixed;
   inset: 0;
+  z-index: 8;
   background: #f4efe6;
   display: flex;
   flex-direction: column;

@@ -280,6 +280,7 @@ function endMove() {
     list.splice(i, 1);
     let base = groundBelow(m.item.x, m.item.y - 30);
     m.item.y = base == null ? floorY() : base;
+    m.item.floor = m.item.y >= floorY() - 2;
     list.splice(i, 0, m.item);
   }
   room().history.push({ snapshot: m.before });
