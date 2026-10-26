@@ -260,11 +260,15 @@ function drawWatch() {
 
 function markWatchChannels() {
   for (let b of document.querySelectorAll("#watchChannels [data-channel]")) b.classList.toggle("on", (watching.channel || "static") == b.dataset.channel);
+  document.getElementById("watchPickVideo").textContent = watching.video ? "Replace video" : "Choose a video";
 }
 
 function hookWatch() {
   watchScreen = createGraphics(640, 480);
   watchScreen.elt.style.display = "";
+  // p5 fixes the canvas at 640 by 480 on the page; let it fill the player instead
+  watchScreen.elt.style.width = "100%";
+  watchScreen.elt.style.height = "100%";
   watchScreen.elt.id = "watchCanvas";
   document.getElementById("watchScreen").appendChild(watchScreen.elt);
   let list = document.getElementById("watchChannels");
@@ -285,6 +289,10 @@ function hookWatch() {
     list.appendChild(b);
   }
   document.getElementById("watchClose").onclick = closeWatch;
+  document.getElementById("watchPickVideo").onclick = () => {
+    tuning = watching;
+    document.getElementById("tvVideoInput").click();
+  };
   document.getElementById("watch").onclick = (e) => {
     if (e.target.id == "watch") closeWatch(); // a click outside the set closes it
   };
