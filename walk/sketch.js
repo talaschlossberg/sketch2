@@ -124,6 +124,7 @@ function setup() {
   hookArt();
   hookMake();
   hookTV();
+  hookWatch();
   hookTools();
   hookSkyButtons();
 }
@@ -137,14 +138,16 @@ function draw() {
   drawTVs();
 
   drawDoorHint();
-  if (!trip && !mapOpen && !editingFrame && !cut && !typing()) moveGuy();
+  if (!trip && !mapOpen && !editingFrame && !cut && !watching && !typing()) moveGuy();
   drawFrameDraft();
   drawDrafts();
   drawOpening();
   drawGuy();
+  drawTVHint();
   drawTrip();
   drawEraserCursor();
   drawSelectHover();
+  drawWatch();
   showRoomName();
 }
 
@@ -173,6 +176,8 @@ function moveGuy() {
   if (up && guy.onGround) {
     let door = doorNear();
     if (door) return goThrough(door);
+    let tv = tvNear();
+    if (tv) return openWatch(tv);
     guy.vy = -JUMP;
     guy.onGround = false;
   }

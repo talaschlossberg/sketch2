@@ -82,34 +82,47 @@ function drawTVs() {
     drawingContext.beginPath();
     drawingContext.roundRect(s.x, s.y, s.w, s.h, 8);
     drawingContext.clip();
-    let ch = t.channel || "static";
-    if (ch == "bars") testCard(s);
-    else if (ch == "walker") walkerOnTV(s);
-    else if (ch == "sky") {
-      if (!skyLayer || skyLayer.width != width) paintSky();
-      image(skyLayer, s.x, s.y, s.w, s.h);
-      if (cloudLayer && (skyName == "day" || skyName == "sunset")) image(cloudLayer, s.x - (cloudDrift / cloudLayer.width) * s.w * 1.5, s.y, s.w * 1.5, s.h);
-    } else if (ch == "video" && tvVideo(t)) {
-      let v = tvVideo(t);
-      if (v.readyState >= 2) {
-        let k = max(s.w / v.videoWidth, s.h / v.videoHeight);
-        drawingContext.drawImage(v, s.x + (s.w - v.videoWidth * k) / 2, s.y + (s.h - v.videoHeight * k) / 2, v.videoWidth * k, v.videoHeight * k);
-      }
-    } else staticOn(s);
-    // a little glass: a sheen and dark corners
-    let glass = drawingContext.createRadialGradient(s.x + s.w * 0.5, s.y + s.h * 0.45, s.h * 0.2, s.x + s.w * 0.5, s.y + s.h * 0.5, s.w * 0.75);
-    glass.addColorStop(0, "rgba(255, 255, 255, 0.06)");
-    glass.addColorStop(1, "rgba(0, 0, 0, 0.45)");
-    drawingContext.fillStyle = glass;
-    drawingContext.fillRect(s.x, s.y, s.w, s.h);
+    paintChannel(window, t, s);
+    glassOver(drawingContext, s);
     drawingContext.restore();
     pop();
   }
 }
 
-function staticOn(s) {
+// the programme on channel t.channel, painted into box s of g (the world, or the big screen)
+function paintChannel(g, t, s) {
+  let ch = t.channel || "static";
+  if (ch == "bars") testCard(g, s);
+  else if (ch == "walker") walkerOnTV(g, s);
+  else if (ch == "sky") {
+    if (!skyLayer || skyLayer.width != width) paintSky();
+    g.image(skyLayer, s.x, s.y, s.w, s.h);
+    if (cloudLayer && (skyName == "day" || skyName == "sunset")) g.image(cloudLayer, s.x - (cloudDrift / cloudLayer.width) * s.w * 1.5, s.y, s.w * 1.5, s.h);
+  } else if (ch == "video" && tvVideo(t)) {
+    let v = tvVideo(t);
+    g.noStroke();
+    g.fill(0);
+    g.rect(s.x, s.y, s.w, s.h);
+    if (v.readyState >= 2) {
+      let k = max(s.w / v.videoWidth, s.h / v.videoHeight);
+      g.drawingContext.drawImage(v, s.x + (s.w - v.videoWidth * k) / 2, s.y + (s.h - v.videoHeight * k) / 2, v.videoWidth * k, v.videoHeight * k);
+    }
+  } else staticOn(g, s);
+}
+
+// a little glass: a sheen and dark corners
+function glassOver(ctx, s) {
+  let glass = ctx.createRadialGradient(s.x + s.w * 0.5, s.y + s.h * 0.45, s.h * 0.2, s.x + s.w * 0.5, s.y + s.h * 0.5, s.w * 0.75);
+  glass.addColorStop(0, "rgba(255, 255, 255, 0.06)");
+  glass.addColorStop(1, "rgba(0, 0, 0, 0.45)");
+  ctx.fillStyle = glass;
+  ctx.fillRect(s.x, s.y, s.w, s.h);
+}
+
+function staticOn(g, s) {
   if (!noiseTile) noiseTile = createImage(80, 60);
-  if (frameCount % 2 == 0) {
+  if (frameCount % 2 == 0 && noiseTile.frame != frameCount) {
+    noiseTile.frame = frameCount;
     noiseTile.loadPixels();
     for (let i = 0; i < noiseTile.pixels.length; i += 4) {
       let v = random(255);
@@ -120,46 +133,161 @@ function staticOn(s) {
     }
     noiseTile.updatePixels();
   }
-  drawingContext.imageSmoothingEnabled = false;
-  image(noiseTile, s.x, s.y, s.w, s.h);
-  drawingContext.imageSmoothingEnabled = true;
+  g.drawingContext.imageSmoothingEnabled = false;
+  g.image(noiseTile, s.x, s.y, s.w, s.h);
+  g.drawingContext.imageSmoothingEnabled = true;
 }
 
-function testCard(s) {
+function testCard(g, s) {
   let bars = ["#c0c0c0", "#c0c000", "#00c0c0", "#00c000", "#c000c0", "#c00000", "#0000c0"];
-  noStroke();
+  g.noStroke();
   bars.forEach((c, i) => {
-    fill(c);
-    rect(s.x + (i * s.w) / 7, s.y, s.w / 7 + 1, s.h * 0.72);
+    g.fill(c);
+    g.rect(s.x + (i * s.w) / 7, s.y, s.w / 7 + 1, s.h * 0.72);
   });
   let low = ["#0000c0", "#131313", "#c000c0", "#131313", "#00c0c0", "#131313", "#c0c0c0"];
   low.forEach((c, i) => {
-    fill(c);
-    rect(s.x + (i * s.w) / 7, s.y + s.h * 0.72, s.w / 7 + 1, s.h * 0.1);
+    g.fill(c);
+    g.rect(s.x + (i * s.w) / 7, s.y + s.h * 0.72, s.w / 7 + 1, s.h * 0.1);
   });
-  fill(18);
-  rect(s.x, s.y + s.h * 0.82, s.w, s.h * 0.18);
-  fill(235);
-  rect(s.x + s.w * 0.1, s.y + s.h * 0.85, s.w * 0.18, s.h * 0.12);
+  g.fill(18);
+  g.rect(s.x, s.y + s.h * 0.82, s.w, s.h * 0.18);
+  g.fill(235);
+  g.rect(s.x + s.w * 0.1, s.y + s.h * 0.85, s.w * 0.18, s.h * 0.12);
 }
 
 // her, on television, walking on the spot in front of a pale studio wall
-function walkerOnTV(s) {
-  noStroke();
-  fill(214, 206, 192);
-  rect(s.x, s.y, s.w, s.h);
-  fill(170, 160, 146);
-  rect(s.x, s.y + s.h * 0.8, s.w, s.h * 0.2);
+function walkerOnTV(g, s) {
+  g.noStroke();
+  g.fill(214, 206, 192);
+  g.rect(s.x, s.y, s.w, s.h);
+  g.fill(170, 160, 146);
+  g.rect(s.x, s.y + s.h * 0.8, s.w, s.h * 0.2);
   if (!walker) return;
   let { imgs, crop } = walker;
   let i = floor(frameCount / 4) % imgs.length;
   let h = s.h * 0.86;
   let w = (crop.w * h) / crop.h;
+  g.push();
+  g.translate(s.x + s.w / 2, s.y + s.h * 0.94);
+  g.scale(drawnFacing, 1);
+  g.image(imgs[i], -w / 2, -h, w, h, crop.x, crop.y, crop.w, crop.h);
+  g.pop();
+}
+
+// ---- watching: walk up to a set and press up ----
+
+let watching = null; // the tv being watched big
+let watchScreen = null; // the big screen, a p5 graphics shown in the popup
+
+function tvNear() {
+  if (!guy.onGround || trip) return null;
+  return room().things.find((t) => {
+    if (t.type != "tv") return false;
+    let { w } = thingSize(t);
+    return abs(guy.x - t.x) < w * 0.45 && abs(guy.y - t.y) < 12;
+  }) || null;
+}
+
+function drawTVHint() {
+  let t = tvNear();
+  if (!t || doorNear()) return;
+  // above her head or the set, whichever is higher, so she doesn't hide it
+  let y = min(tvBox(t).y, guy.y - GUY_HEIGHT) - 14 + sin(frameCount * 0.1) * 3;
   push();
-  translate(s.x + s.w / 2, s.y + s.h * 0.94);
-  scale(drawnFacing, 1);
-  image(imgs[i], -w / 2, -h, w, h, crop.x, crop.y, crop.w, crop.h);
+  stroke(inkHere());
+  strokeWeight(2.5);
+  line(guy.x, y, guy.x, y - 18);
+  line(guy.x - 7, y - 11, guy.x, y - 18);
+  line(guy.x + 7, y - 11, guy.x, y - 18);
+  noStroke();
+  fill(inkHere());
+  textFont("Comic Neue");
+  textStyle(BOLD);
+  textSize(14);
+  textAlign(CENTER, BOTTOM);
+  text("watch", guy.x, y - 22);
   pop();
+}
+
+function openWatch(t) {
+  watching = t;
+  document.getElementById("watch").hidden = false;
+  markWatchChannels();
+  showOnWatch();
+}
+
+function closeWatch() {
+  if (!watching) return;
+  let v = document.getElementById("watchVideo");
+  v.pause();
+  v.removeAttribute("src");
+  v.load();
+  watching = null;
+  document.getElementById("watch").hidden = true;
+}
+
+// your video plays in a proper player, with sound; other channels are painted live
+function showOnWatch() {
+  let t = watching;
+  let v = document.getElementById("watchVideo");
+  let isVideo = t.channel == "video" && t.video;
+  v.hidden = !isVideo;
+  watchScreen.elt.hidden = isVideo;
+  if (isVideo) {
+    if (v.dataset.blob != t.video.size + t.video.name) {
+      v.src = URL.createObjectURL(t.video);
+      v.dataset.blob = t.video.size + t.video.name;
+    }
+    v.muted = false;
+    v.play().catch(() => {});
+    let small = tvVideo(t);
+    if (small) small.muted = true; // one sound at a time
+  } else {
+    v.pause();
+  }
+  document.getElementById("watchTitle").textContent = CHANNELS[t.channel || "static"];
+}
+
+function drawWatch() {
+  if (!watching || !watchScreen || watchScreen.elt.hidden) return;
+  let s = { x: 0, y: 0, w: watchScreen.width, h: watchScreen.height };
+  watchScreen.push();
+  paintChannel(watchScreen, watching, s);
+  glassOver(watchScreen.drawingContext, s);
+  watchScreen.pop();
+}
+
+function markWatchChannels() {
+  for (let b of document.querySelectorAll("#watchChannels [data-channel]")) b.classList.toggle("on", (watching.channel || "static") == b.dataset.channel);
+}
+
+function hookWatch() {
+  watchScreen = createGraphics(640, 480);
+  watchScreen.elt.style.display = "";
+  watchScreen.elt.id = "watchCanvas";
+  document.getElementById("watchScreen").appendChild(watchScreen.elt);
+  let list = document.getElementById("watchChannels");
+  for (let ch in CHANNELS) {
+    let b = document.createElement("button");
+    b.dataset.channel = ch;
+    b.textContent = CHANNELS[ch];
+    b.onclick = () => {
+      if (ch == "video" && !watching.video) {
+        tuning = watching;
+        return document.getElementById("tvVideoInput").click();
+      }
+      watching.channel = ch;
+      markWatchChannels();
+      showOnWatch();
+      saveWorld();
+    };
+    list.appendChild(b);
+  }
+  document.getElementById("watchClose").onclick = closeWatch;
+  document.getElementById("watch").onclick = (e) => {
+    if (e.target.id == "watch") closeWatch(); // a click outside the set closes it
+  };
 }
 
 function tvVideo(t) {
@@ -227,7 +355,10 @@ function hookTV() {
     tuning.channel = "video";
     let v = tvVideo(tuning);
     v.onerror = () => showStatus("That video won't play here. Try an MP4 or MOV.", 5000);
-    markChannels();
+    if (watching == tuning) {
+      markWatchChannels();
+      showOnWatch();
+    } else markChannels();
     saveWorld();
   };
   document.getElementById("tvSound").onclick = () => {
