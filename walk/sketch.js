@@ -27,7 +27,7 @@ let guy = {
 };
 
 let GUY_HEIGHT = 160;
-let SPEED = 3;
+let SPEED = 2;
 let GRAVITY = 0.6;
 let JUMP = 11;
 let STEP_UP = 18; // tallest bump he can step onto without jumping
