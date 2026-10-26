@@ -1,12 +1,12 @@
 // Walk: draw lines, then walk the little guy along them with the arrow keys.
-// He starts with walk/frames/walk1.png ... walk5.png, drawn facing left.
+// She starts with walk/frames/walk01.png ... walk22.png (from walk_cycle.mov), facing right.
 // Choose folder (or drop a folder on the page) swaps in any other sequence;
 // frames.js cleans the frames up and works out how far each one travels.
 
-let BUILT_IN_FRAMES = 5;
+let BUILT_IN_FRAMES = 22;
 
 let walker = null; // what prepareFrames returns
-let drawnFacing = -1; // which way the frames are drawn: -1 left, 1 right
+let drawnFacing = 1; // which way the frames are drawn: -1 left, 1 right
 let framesFailed = false;
 
 let lines = []; // every line you draw: a list of {x, y} points, plus a seed for its wobble
@@ -61,7 +61,7 @@ function urlToImage(url) {
 }
 
 function frameUrl(n) {
-  return "frames/walk" + n + ".png";
+  return "frames/walk" + String(n).padStart(2, "0") + ".png";
 }
 
 async function useFiles(files, remember) {

@@ -9,9 +9,12 @@ function prepareFrames(els) {
     let img = createImage(el.naturalWidth, el.naturalHeight);
     img.drawingContext.drawImage(el, 0, 0);
     let data = img.drawingContext.getImageData(0, 0, img.width, img.height);
-    clearBackground(data);
-    fillInside(data);
-    img.drawingContext.putImageData(data, 0, 0);
+    // photos and video are used as they are; only line drawings get cleaned up
+    if (isLineArt(data)) {
+      clearBackground(data);
+      fillInside(data);
+      img.drawingContext.putImageData(data, 0, 0);
+    }
     return img;
   });
 
@@ -43,6 +46,22 @@ function prepareFrames(els) {
     jumping: spreads.indexOf(widest),
     stepPerFrame: (stepLength * steps) / n, // share of his height per frame
   };
+}
+
+// Line drawings are almost all black and white; photos have colour and mid tones.
+function isLineArt(data) {
+  let p = data.data;
+  let solid = 0;
+  let toned = 0;
+  for (let i = 0; i < p.length; i += 16) {
+    if (p[i + 3] < 128) continue;
+    solid++;
+    let hi = max(p[i], p[i + 1], p[i + 2]);
+    let lo = min(p[i], p[i + 1], p[i + 2]);
+    let grey = (p[i] + p[i + 1] + p[i + 2]) / 3;
+    if (hi - lo > 40 || (grey > 60 && grey < 200)) toned++;
+  }
+  return toned < solid * 0.03;
 }
 
 // Frames drawn on white instead of a transparent background: make the paper see-through.
@@ -215,7 +234,7 @@ async function rememberFrames(files, drawnFacing) {
   try {
     let db = await openStore();
     let tx = db.transaction("saved", "readwrite");
-    tx.objectStore("saved").put({ files: files.map((f) => ({ name: f.name, blob: f })), drawnFacing }, "frames");
+    tx.objectStore("saved").put({ files: files.map((f) => ({ name: f.name, blob: f })), drawnFacing }, "folder");
   } catch (e) {
     // private window or storage blocked: it just won't be remembered
   }
@@ -225,7 +244,7 @@ async function rememberedFrames() {
   try {
     let db = await openStore();
     return await new Promise((done) => {
-      let req = db.transaction("saved").objectStore("saved").get("frames");
+      let req = db.transaction("saved").objectStore("saved").get("folder");
       req.onsuccess = () => done(req.result || null);
       req.onerror = () => done(null);
     });
