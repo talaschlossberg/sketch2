@@ -82,12 +82,32 @@ async function useFiles(files, remember) {
   }
 }
 
-function showStatus(text, ms) {
+// a message along the bottom; tips (with a key) closed with the × don't come back
+function showStatus(text, ms, key) {
+  if (key && closedTips().includes(key)) return;
   let el = document.getElementById("status");
-  el.textContent = text;
+  document.getElementById("statusText").textContent = text;
+  el.dataset.key = key || "";
   el.hidden = false;
   clearTimeout(showStatus.timer);
   if (ms) showStatus.timer = setTimeout(() => (el.hidden = true), ms);
+}
+
+function closedTips() {
+  try {
+    return JSON.parse(localStorage.getItem("walk-closed-tips")) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function closeStatus() {
+  let el = document.getElementById("status");
+  el.hidden = true;
+  if (!el.dataset.key) return;
+  try {
+    localStorage.setItem("walk-closed-tips", JSON.stringify([...closedTips(), el.dataset.key]));
+  } catch (e) {}
 }
 
 function setup() {
@@ -458,6 +478,7 @@ function windowResized() {
 }
 
 function hookButtons() {
+  document.getElementById("statusClose").onclick = closeStatus;
   document.getElementById("undo").onclick = undo;
   document.getElementById("clear").onclick = resetLines;
   document.getElementById("mapButton").onclick = toggleMap;

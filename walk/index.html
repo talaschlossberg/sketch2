@@ -51,7 +51,7 @@
     </header>
     <div id="hint" hidden>Arrow keys walk. Up jumps, or goes through a door. M opens the map. Drop a folder of walk frames anywhere for a new walker.</div>
     <input id="folder" type="file" webkitdirectory multiple accept="image/*" hidden>
-    <div id="status" hidden></div>
+    <div id="status" role="status" hidden><span id="statusText"></span><button id="statusClose" aria-label="Close" title="Close">×</button></div>
     <div id="doorChoice" hidden>
       <span id="doorQuestion">Where does this door go?</span>
       <div class="choices">

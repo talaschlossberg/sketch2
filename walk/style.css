@@ -241,7 +241,29 @@ body[data-using="select"] canvas {
   background: #222;
   color: #fff;
   font-size: 14px;
-  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 8px;
+}
+
+#statusClose {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 19px;
+  line-height: 1;
+}
+
+#statusClose:hover {
+  background: #fff;
+  color: #222;
 }
 
 body.dropping {

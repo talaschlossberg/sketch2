@@ -26,7 +26,7 @@ function setTool(name) {
   document.getElementById("shapePicker").hidden = true;
   document.body.classList.toggle("erasing", name == "erase");
   document.body.dataset.using = name;
-  if (TOOL_HELP[name]) showStatus(TOOL_HELP[name], 5000);
+  if (TOOL_HELP[name]) showStatus(TOOL_HELP[name], 5000, "tool-" + name);
   else if (name != "thing") document.getElementById("status").hidden = true;
   if (name == "shapes") showShapePicker();
   if (name == "scissors") openCutEditor();
