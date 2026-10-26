@@ -23,6 +23,7 @@ let guy = {
   facing: 1,
   onGround: false,
   stride: 0, // distance walked, drives the frame
+  angle: 0, // tilt to match the slope under his feet
 };
 
 let GUY_HEIGHT = 160;
@@ -151,6 +152,18 @@ function moveGuy() {
 
   if (dir == 0 && guy.onGround) guy.stride = 0;
 
+  // lean with the slope so his feet sit flat on it; straighten up in the air
+  let target = 0;
+  if (guy.onGround) {
+    let reach = 12;
+    let left = groundBelow(guy.x - reach, guy.y - STEP_UP);
+    let right = groundBelow(guy.x + reach, guy.y - STEP_UP);
+    if (left != null && right != null && abs(left - guy.y) < STEP_UP * 2 && abs(right - guy.y) < STEP_UP * 2) {
+      target = atan2(right - left, reach * 2);
+    }
+  }
+  guy.angle = lerp(guy.angle, target, 0.25);
+
   // the sides of the window are walls
   guy.x = constrain(guy.x, 20, width - 20);
 
@@ -188,6 +201,7 @@ function groundBelow(x, fromY) {
 function drawGuy() {
   push();
   translate(guy.x, guy.y);
+  rotate(guy.angle);
 
   if (!walker) {
     if (!framesFailed) {
@@ -278,7 +292,7 @@ function drawInk() {
 }
 
 // A pen line like the ones he's drawn with: smoothed, wobbling a little,
-// thicker and thinner along its length, and tapering at the ends.
+// and a little thicker and thinner along its length.
 function inkLine(g, pts, seed = pts.seed) {
   pts = roundCorners(pts);
   let spots = [];
@@ -296,8 +310,7 @@ function inkLine(g, pts, seed = pts.seed) {
     }
   }
   for (let s of spots) {
-    let taper = min(1, s.d / 10, (d - s.d) / 10);
-    let w = (1.2 + noise(seed + 80, s.d * 0.02) * 1.3) * (0.5 + 0.5 * taper);
+    let w = 2.2 + noise(seed + 80, s.d * 0.02) * 1.3;
     g.circle(s.x, s.y, w);
   }
 }
