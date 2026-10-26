@@ -19,11 +19,12 @@ let thingPictures = {};
 let placingThing = null;
 
 function thingUrl(name) {
-  return THINGS[name].art || THINGS[name].file;
+  return THINGS[name].art || THINGS[name].icon || THINGS[name].file;
 }
 
 function loadThings() {
   for (let name in THINGS) {
+    if (THINGS[name].drawn) continue; // drawn in pen, not a photo
     urlToImage(thingUrl(name)).then((el) => {
       let img = createImage(el.naturalWidth, el.naturalHeight);
       img.drawingContext.drawImage(el, 0, 0);
@@ -37,11 +38,13 @@ function loadThings() {
 function thingSize(t) {
   let pic = thingPictures[t.type];
   let h = GUY_HEIGHT * THINGS[t.type].height;
+  if (THINGS[t.type].drawn) return { w: h * THINGS[t.type].aspect, h };
   let w = pic ? (h * pic.width) / pic.height : h * 0.84;
   return { w, h };
 }
 
 function inkThing(g, t) {
+  if (t.type == "tv") return inkTV(g, t);
   let pic = thingPictures[t.type];
   if (!pic) return;
   let { w, h } = thingSize(t);

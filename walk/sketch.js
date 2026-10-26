@@ -123,6 +123,7 @@ function setup() {
   hookThings();
   hookArt();
   hookMake();
+  hookTV();
   hookTools();
   hookSkyButtons();
 }
@@ -133,6 +134,7 @@ function draw() {
 
   if (inkDirty) drawInk();
   image(room().ink, 0, 0, width, height);
+  drawTVs();
 
   drawDoorHint();
   if (!trip && !mapOpen && !editingFrame && !cut && !typing()) moveGuy();
@@ -334,6 +336,8 @@ function mousePressed(e) {
     return writeText(t ? t.x : mouseX, t ? t.y : mouseY, t);
   }
   if (tool != "draw") return; // scissors and things wait for their own panels
+  let tv = tvAt(mouseX, mouseY);
+  if (tv) return openTuner(tv);
   let f = frameAt(mouseX, mouseY);
   if (f) return openArtEditor(f);
   drawing = [{ x: mouseX, y: mouseY }];

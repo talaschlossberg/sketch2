@@ -107,6 +107,16 @@
         </div>
       </div>
     </div>
+    <div id="tvPanel" hidden>
+      <span>What's on?</span>
+      <div class="choices" id="tvChannels"></div>
+      <div class="choices">
+        <button id="tvPickVideo">Choose a video</button>
+        <input id="tvVideoInput" type="file" accept="video/*" hidden>
+        <button id="tvSound">Sound: off</button>
+        <button id="tvDone" class="primary">Done</button>
+      </div>
+    </div>
     <div id="map" hidden>
       <div id="mapBar">
         <h2>Map</h2>
@@ -130,6 +140,7 @@
     <script src="rooms.js"></script>
     <script src="map.js"></script>
     <script src="things.js"></script>
+    <script src="tv.js"></script>
     <script src="art.js"></script>
     <script src="tools.js"></script>
     <script src="make.js"></script>

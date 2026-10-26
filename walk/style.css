@@ -232,7 +232,7 @@ body[data-using="select"] canvas {
   position: fixed;
   z-index: 7;
   left: calc(50% + var(--panel) / 2);
-  bottom: 24px;
+  top: calc(var(--bar) + 10px);
   transform: translateX(-50%);
   width: max-content;
   max-width: calc(100% - 32px);
@@ -306,9 +306,6 @@ button:active, button.on {
 }
 
 /* the on-screen arrows are for touch screens */
-@media (max-width: 600px) {
-  #status { bottom: 88px; }
-}
 
 @media (hover: hover) and (pointer: fine) {
   #pad { display: none; }
@@ -319,7 +316,8 @@ button:active, button.on {
 }
 
 #doorChoice,
-#thingChoice {
+#thingChoice,
+#tvPanel {
   position: fixed;
   z-index: 7;
   left: calc(50% + var(--panel) / 2);
