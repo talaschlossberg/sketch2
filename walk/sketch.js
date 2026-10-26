@@ -9,7 +9,7 @@ let walker = null; // what prepareFrames returns
 let drawnFacing = 1; // which way the frames are drawn: -1 left, 1 right
 let framesFailed = false;
 
-let lines = rooms[0].lines; // the lines drawn in the room she's in: lists of {x, y} points, plus a seed for its wobble
+let lines = []; // the lines drawn in the room she's in: lists of {x, y} points, plus a seed for its wobble
 let drawing = null;
 let FLOOR_GAP = 40; // the floor runs along the bottom of the window, this far up
 let inkDirty = true; // each room's lines are drawn once into its own layer, and again only when they change
@@ -93,22 +93,23 @@ function showStatus(text, ms) {
 function setup() {
   createCanvas(windowWidth, windowHeight);
   loadBuiltInFrames();
-  resetLines();
+  loadWorld();
   guy.y = floorY();
   hookButtons();
+  hookMap();
   loadSky();
   hookSkyButtons();
 }
 
 function draw() {
-  if (roomIndex == 0) drawSky();
+  if (isOutside()) drawSky();
   else drawRoom();
 
   if (inkDirty) drawInk();
   image(room().ink, 0, 0, width, height);
 
   drawDoorHint();
-  if (!trip) moveGuy();
+  if (!trip && !mapOpen) moveGuy();
   drawGuy();
   drawTrip();
 }
@@ -254,7 +255,7 @@ function drawStandIn() {
 // ---- drawing lines ----
 
 function floorY() {
-  return roomIndex == 0 ? height - FLOOR_GAP : round(height * 0.8);
+  return floorFor(room().kind);
 }
 
 // the window can change size after the page opens, so the floor is worked out each time
@@ -264,11 +265,12 @@ function floorLine() {
   return l;
 }
 
+// clears the lines here; doors stay, so the rooms stay linked (Undo takes doors away)
 function resetLines() {
   lines.length = 0;
-  room().doors = [];
-  room().history = [];
+  room().history = room().history.filter((h) => h == "door");
   inkDirty = true;
+  saveWorld();
 }
 
 function mousePressed(e) {
@@ -295,6 +297,7 @@ function mouseReleased() {
     lines.pop();
     room().history.pop();
   }
+  if (drawing) saveWorld();
   drawing = null;
   inkDirty = true;
 }
@@ -306,7 +309,7 @@ function drawInk() {
   ink.clear();
   ink.noStroke();
   ink.fill(inkHere());
-  let fixed = roomIndex == 1 ? roomDrawing() : [];
+  let fixed = roomDrawing();
   for (let l of [...solidLines(), ...fixed, ...lines]) inkLine(ink, l);
   for (let d of doorsHere()) inkDoor(ink, d);
   inkDirty = false;
@@ -359,6 +362,7 @@ function keyPressed() {
     return false; // don't scroll the page
   }
   if ((key == "z" || key == "Z") && (keyIsDown(CONTROL) || keyIsDown(91))) undo();
+  if ((key == "m" || key == "M") && !document.activeElement.isContentEditable) toggleMap();
 }
 
 function undo() {
@@ -366,6 +370,7 @@ function undo() {
   if (last == "line") lines.pop();
   if (last == "door") room().doors.pop();
   inkDirty = true;
+  saveWorld();
 }
 
 function windowResized() {
@@ -379,6 +384,16 @@ function hookButtons() {
   document.getElementById("undo").onclick = undo;
   document.getElementById("clear").onclick = resetLines;
   document.getElementById("door").onclick = () => setPlacingDoor(!placingDoor);
+  document.getElementById("mapButton").onclick = toggleMap;
+  for (let b of document.querySelectorAll("#doorChoice [data-kind]")) b.onclick = () => linkToNewRoom(b.dataset.kind);
+  document.getElementById("pickOnMap").onclick = () => {
+    closeDoorChoice();
+    openMap(pendingDoor);
+  };
+  document.getElementById("notYet").onclick = () => {
+    pendingDoor = null;
+    closeDoorChoice();
+  };
 
   let picker = document.getElementById("folder");
   if (!("webkitdirectory" in picker)) picker.removeAttribute("webkitdirectory"); // phones: pick the files instead

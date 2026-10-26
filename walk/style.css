@@ -47,7 +47,7 @@ canvas {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
-body[data-room="room"] #hint {
+body[data-room="inside"] #hint {
   color: #3a332c;
   text-shadow: none;
 }
@@ -113,4 +113,189 @@ button:active, button.on {
 
 @media (hover: hover) and (pointer: fine) {
   #pad { display: none; }
+}
+
+[hidden] {
+  display: none !important;
+}
+
+#doorChoice {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 12px 14px;
+  border: 2px solid #222;
+  border-radius: 10px;
+  background: #fffdf8;
+  color: #222;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 15px;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#map {
+  position: fixed;
+  inset: 0;
+  background: #f4efe6;
+  display: flex;
+  flex-direction: column;
+  color: #222;
+}
+
+#mapBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  border-bottom: 2px solid #222;
+}
+
+#mapBar h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+#mapHint {
+  flex: 1;
+  min-width: 200px;
+  color: #5b5348;
+  font-size: 14px;
+}
+
+#mapBoard {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+}
+
+#mapLinks {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+#mapLinks path {
+  fill: none;
+  stroke: #222;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+#mapLinks rect {
+  fill: #fffdf8;
+  stroke: #222;
+  stroke-width: 2;
+}
+
+.card {
+  position: absolute;
+  width: 200px;
+  padding: 8px;
+  border: 2px solid #222;
+  border-radius: 8px;
+  background: #fffdf8;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card.dragging {
+  cursor: grabbing;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  z-index: 2;
+}
+
+.card.here {
+  outline: 3px solid #e2725b;
+  outline-offset: 3px;
+}
+
+#mapBoard.linking .card {
+  cursor: pointer;
+}
+
+#mapBoard.linking .card:hover {
+  outline: 3px dashed #222;
+  outline-offset: 3px;
+}
+
+.card .pic {
+  height: 118px;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #5b5348;
+}
+
+.card.outside .pic { background-color: #9db6d6; color: #fff; }
+.card.room .pic { background-color: #efe6d6; }
+.card.empty .pic { background-color: #f2ede4; }
+
+.card .name {
+  font-weight: 600;
+  font-size: 15px;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  border-radius: 4px;
+  cursor: text;
+  outline: none;
+}
+
+.card .name:focus {
+  background: #f1eadf;
+}
+
+.card .info {
+  font-size: 12px;
+  color: #6b6357;
+}
+
+.card button.small {
+  padding: 4px 8px;
+  font-size: 13px;
+  align-self: flex-start;
+}
+
+.card .delete {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  padding: 0 8px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 13px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.card .delete.confirm {
+  background: #b3402f;
+  border-color: #b3402f;
+  color: #fff;
+}
+
+button:focus-visible,
+.card .name:focus-visible {
+  outline: 3px solid #e2725b;
+  outline-offset: 2px;
 }

@@ -25,6 +25,7 @@ function loadSky() {
     let saved = localStorage.getItem("walk-sky");
     if (SKIES[saved]) skyName = saved;
   } catch (e) {}
+  if (isOutside() && SKIES[room().sky]) skyName = room().sky; // she's outside: that place's own sky
   urlToImage(skyPhotoUrl()).then((el) => {
     skyPhoto = createImage(el.naturalWidth, el.naturalHeight);
     skyPhoto.drawingContext.drawImage(el, 0, 0);
@@ -33,9 +34,14 @@ function loadSky() {
   markSkyButtons();
 }
 
+// each outside keeps its own sky; rooms look out on the last one picked
 function chooseSky(name) {
   skyName = name;
   skyLayer = null;
+  if (typeof rooms != "undefined" && rooms.length && isOutside()) {
+    room().sky = name;
+    saveWorld();
+  }
   inkDirty = true; // the lines change colour with the sky
   markSkyButtons();
   try {

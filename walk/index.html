@@ -8,7 +8,7 @@
     <link rel="stylesheet" type="text/css" href="style.css">
   </head>
   <body>
-    <div id="hint">Draw lines with the mouse or your finger. Arrow keys walk, up jumps or goes through a door. Drop a folder of frames anywhere to swap the walker.</div>
+    <div id="hint">Draw lines with the mouse or your finger. Arrow keys walk, up jumps or goes through a door, M opens the map. Drop a folder of frames anywhere to swap the walker.</div>
     <div id="tools">
       <div id="skies">
         <button data-sky="photo">Photo</button>
@@ -16,6 +16,7 @@
         <button data-sky="day">Day</button>
         <button data-sky="night">Night</button>
       </div>
+      <button id="mapButton">Map</button>
       <button id="door">Add door</button>
       <button id="choose">Choose folder</button>
       <button id="turn">Turn around</button>
@@ -24,6 +25,29 @@
     </div>
     <input id="folder" type="file" webkitdirectory multiple accept="image/*" hidden>
     <div id="status" hidden></div>
+    <div id="doorChoice" hidden>
+      <span id="doorQuestion">Where does this door go?</span>
+      <div class="choices">
+        <button data-kind="room">New room</button>
+        <button data-kind="empty">New empty room</button>
+        <button data-kind="outside">New outside</button>
+        <button id="pickOnMap">Pick on the map</button>
+        <button id="notYet">Not yet</button>
+      </div>
+    </div>
+    <div id="map" hidden>
+      <div id="mapBar">
+        <h2>Map</h2>
+        <span id="mapHint"></span>
+        <div class="choices">
+          <button data-new="room">New room</button>
+          <button data-new="empty">New empty room</button>
+          <button data-new="outside">New outside</button>
+          <button id="closeMap">Back to her</button>
+        </div>
+      </div>
+      <div id="mapBoard"><svg id="mapLinks"></svg></div>
+    </div>
     <div id="pad">
       <button data-key="left">&#9664;</button>
       <button data-key="up">&#9650;</button>
@@ -32,6 +56,7 @@
     <script src="frames.js"></script>
     <script src="sky.js"></script>
     <script src="rooms.js"></script>
+    <script src="map.js"></script>
     <script src="sketch.js"></script>
   </body>
 </html>

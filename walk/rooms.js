@@ -1,23 +1,54 @@
-// Rooms: outside under the sky, and the room behind any door you put up.
-// Each room keeps its own lines and doors. Walk up to a door and press up
-// to go through. Used by sketch.js.
+// Rooms: places she can be, each with its own lines and doors. A door leads
+// to another room; walk up to it and press up to go through. Rooms come in
+// three kinds: outside (under the sky), a furnished room, and an empty room
+// to draw in. The map (map.js) shows them all and links them up. Used by sketch.js.
 
-let rooms = [
-  { name: "outside", lines: [], doors: [], history: [], ink: null },
-  { name: "room", lines: [], doors: [], history: [], ink: null },
-];
+let rooms = [];
 let roomIndex = 0;
 let placingDoor = false;
-let lastDoorOutside = null; // the door she went in by, so she comes back out of it
+let pendingDoor = null; // a door just put up, waiting to be told where it goes
 let trip = null; // going through a door: { door, t, switched }
+let roomCount = 0;
 
 let WALL = [244, 239, 230];
 let FLOORBOARDS = [214, 200, 180];
 let DOOR_PAPER = [250, 248, 242];
 let ROOM_INK = 17;
+let KIND_NAMES = { outside: "Outside", room: "Room", empty: "Empty room" };
+
+function makeRoom(kind, name, mapAt) {
+  roomCount++;
+  let r = {
+    id: "r" + Date.now().toString(36) + roomCount,
+    name: name || KIND_NAMES[kind] + " " + roomCount,
+    kind,
+    lines: [],
+    doors: [],
+    history: [],
+    ink: null,
+    thumb: null,
+    sky: skyName,
+    map: mapAt || { x: 40 + (rooms.length % 4) * 280, y: 160 + Math.floor(rooms.length / 4) * 230 },
+  };
+  rooms.push(r);
+  return r;
+}
 
 function room() {
   return rooms[roomIndex];
+}
+
+function roomById(id) {
+  return rooms.find((r) => r.id == id);
+}
+
+function isOutside(r = room()) {
+  return r.kind == "outside";
+}
+
+// where the floor is for each kind of room
+function floorFor(kind) {
+  return kind == "outside" ? height - FLOOR_GAP : round(height * 0.8);
 }
 
 function doorSize() {
@@ -37,14 +68,13 @@ function layout() {
     chair: { x1: w * 0.45, x2: w * 0.52, seat: f - H * 0.3, back: f - H * 0.78 },
     lamp: { x: w * 0.68, y: height * 0.3 },
     plant: { x: w * 0.9 },
-    door: { x: max(w * 0.1, doorSize().w / 2 + 12), y: f, fixed: true, seed: 31 },
   };
 }
 
 // lines she can stand on that come with the room
 function solidLines() {
   let out = [floorLine()];
-  if (roomIndex == 1) {
+  if (room().kind == "room") {
     let L = layout();
     // furniture stands against the back wall: she walks past it, or jumps up onto it
     out.push(platform(seeded([{ x: L.table.x1, y: L.table.top }, { x: L.table.x2, y: L.table.top }], 41)));
@@ -53,20 +83,22 @@ function solidLines() {
   return out;
 }
 
-// lines that are only drawn: legs, frames, the lamp, the plant
+// lines that are only drawn: skirting and floorboards indoors, and in a
+// furnished room the legs, frames, the lamp, the plant
 function roomDrawing() {
+  if (isOutside()) return [];
   let L = layout();
   let f = floorY();
   let out = [];
   let add = (pts, seed) => out.push(seeded(pts, seed));
   let box = (r, seed) => add(sharp([{ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y }, { x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }, { x: r.x, y: r.y - 1 }]), seed);
 
-  // skirting board and floorboards
   add([{ x: -10, y: f - 9 }, { x: width + 10, y: f - 9 }], 50);
   for (let i = 1; i < 4; i++) {
     let y = f + (height - f) * (i * i) / 12;
     add([{ x: -10, y }, { x: width + 10, y: y + 1 }], 60 + i);
   }
+  if (room().kind != "room") return out;
 
   // window with its cross bars and sill
   let win = L.win;
@@ -123,7 +155,6 @@ function seeded(pts, seed) {
 }
 
 function doorsHere() {
-  if (roomIndex == 1) return [layout().door, ...room().doors];
   return room().doors;
 }
 
@@ -135,7 +166,11 @@ function drawRoom() {
   noStroke();
   fill(FLOORBOARDS);
   rect(0, floorY(), width, height - floorY());
+  if (room().kind == "room") drawFurnishings(L);
+  if (grain) image(grain, 0, 0, width, height);
+}
 
+function drawFurnishings(L) {
   // the sky outside the window, and the world outside in the picture
   // the whole sky, shrunk to fit the window, so its colours all show
   clipTo(L.win, () => {
@@ -146,7 +181,8 @@ function drawRoom() {
   clipTo(L.pic, () => {
     if (!skyLayer || skyLayer.width != width) paintSky();
     image(skyLayer, L.pic.x, L.pic.y, L.pic.w, L.pic.h);
-    if (rooms[0].ink) image(rooms[0].ink, L.pic.x, L.pic.y, L.pic.w, L.pic.h);
+    let outside = rooms.find((r) => isOutside(r));
+    if (outside && outside.ink) image(outside.ink, L.pic.x, L.pic.y, L.pic.w, L.pic.h);
   });
 
   // warm light from the lamp
@@ -155,8 +191,6 @@ function drawRoom() {
   g.addColorStop(1, "rgba(255, 214, 150, 0)");
   drawingContext.fillStyle = g;
   drawingContext.fillRect(0, 0, width, height);
-
-  if (grain) image(grain, 0, 0, width, height);
 }
 
 function clipTo(r, paint) {
@@ -186,7 +220,7 @@ function inkDoor(g, d) {
 }
 
 function inkHere() {
-  return roomIndex == 0 ? inkColour() : ROOM_INK;
+  return isOutside() ? inkColour() : ROOM_INK;
 }
 
 // ---- going through doors ----
@@ -198,6 +232,12 @@ function doorNear() {
 }
 
 function goThrough(door) {
+  if (!door.to || !roomById(door.to)) {
+    pendingDoor = door;
+    askWhereDoorGoes("This door doesn't lead anywhere yet. Where should it go?");
+    return;
+  }
+  snapshotRoom(); // before the door opens, while the room looks itself
   trip = { door, t: 0, switched: false };
 }
 
@@ -230,28 +270,27 @@ function drawTrip() {
 
   if (trip.t >= 0.65 && !trip.switched) {
     trip.switched = true;
-    if (roomIndex == 0) {
-      lastDoorOutside = d;
-      enterRoom(1);
-    } else {
-      enterRoom(0);
-    }
+    enterRoom(rooms.indexOf(roomById(d.to)), room().id);
   }
   if (trip.t >= 1) trip = null;
 }
 
-function enterRoom(i) {
+// she arrives at the door that leads back where she came from, if there is one
+function enterRoom(i, fromId) {
   roomIndex = i;
   lines = room().lines;
   inkDirty = true;
-  let arrive = i == 1 ? layout().door : lastDoorOutside || { x: 120, y: floorY() };
-  guy.x = arrive.x;
+  let back = room().doors.find((d) => d.to == fromId) || (fromId == null && room().doors[0]);
+  let arrive = back || { x: 120, y: floorY() };
+  guy.x = constrain(arrive.x, 20, width - 20);
   guy.y = arrive.y;
   guy.vy = 0;
   guy.onGround = true;
   guy.angle = 0;
   guy.stride = 0;
-  document.body.dataset.room = room().name;
+  document.body.dataset.room = isOutside() ? "outside" : "inside";
+  if (isOutside() && room().sky && room().sky != skyName) chooseSky(room().sky);
+  saveWorld();
 }
 
 // a little pen arrow over a door she's standing at
@@ -260,7 +299,7 @@ function drawDoorHint() {
   if (!d) return;
   let { h } = doorSize();
   let y = d.y - h - 18 + sin(frameCount * 0.1) * 3;
-  stroke(roomIndex == 0 ? inkColour() : ROOM_INK);
+  stroke(inkHere());
   strokeWeight(2.5);
   noFill();
   line(d.x, y, d.x, y - 18);
@@ -272,11 +311,114 @@ function drawDoorHint() {
 function placeDoor(x, y) {
   let base = groundBelow(x, y - 30);
   if (base == null) base = floorY();
-  let d = { x: constrain(x, doorSize().w / 2, width - doorSize().w / 2), y: base, seed: random(1000) };
+  let d = { x: constrain(x, doorSize().w / 2, width - doorSize().w / 2), y: base, seed: random(1000), to: null };
   room().doors.push(d);
   room().history.push("door");
   inkDirty = true;
   setPlacingDoor(false);
+  pendingDoor = d;
+  askWhereDoorGoes("Where does this door go?");
+  saveWorld();
+}
+
+// ---- where doors go ----
+
+function askWhereDoorGoes(question) {
+  document.getElementById("doorQuestion").textContent = question;
+  document.getElementById("doorChoice").hidden = false;
+}
+
+function closeDoorChoice() {
+  document.getElementById("doorChoice").hidden = true;
+}
+
+// a new room behind the pending door, with a door of its own leading back
+function linkToNewRoom(kind) {
+  let from = room();
+  let card = from.map;
+  let r = makeRoom(kind, null, freeMapSpot(card.x + 280, card.y));
+  if (pendingDoor) linkDoor(pendingDoor, r);
+  pendingDoor = null;
+  closeDoorChoice();
+  saveWorld();
+  return r;
+}
+
+function linkDoor(door, target) {
+  door.to = target.id;
+  let home = rooms.find((r) => r.doors.includes(door));
+  if (home && !target.doors.some((d) => d.to == home.id)) {
+    let x = max(width * 0.1, doorSize().w / 2 + 12) + target.doors.length * doorSize().w * 1.4;
+    target.doors.push({ x, y: floorFor(target.kind), seed: random(1000), to: home.id });
+    target.ink = null;
+  }
+  inkDirty = true;
+}
+
+function freeMapSpot(x, y) {
+  let taken = (px, py) => rooms.some((r) => abs(r.map.x - px) < 230 && abs(r.map.y - py) < 200);
+  for (let tries = 0; tries < 40 && taken(x, y); tries++) {
+    y += 230;
+    if (tries % 3 == 2) {
+      x += 280;
+      y -= 690;
+    }
+  }
+  return { x, y };
+}
+
+// a small picture of the room for the map
+function snapshotRoom() {
+  if (!room() || !width) return;
+  let c = document.createElement("canvas");
+  c.width = 320;
+  c.height = round((320 * height) / width);
+  c.getContext("2d").drawImage(document.querySelector("canvas"), 0, 0, c.width, c.height);
+  try {
+    room().thumb = c.toDataURL("image/jpeg", 0.7);
+  } catch (e) {}
+}
+
+// ---- keeping the world in this browser ----
+
+function saveWorld() {
+  clearTimeout(saveWorld.timer);
+  saveWorld.timer = setTimeout(() => {
+    let world = {
+      at: room().id,
+      count: roomCount,
+      rooms: rooms.map((r) => ({
+        id: r.id, name: r.name, kind: r.kind, sky: r.sky, map: r.map, thumb: r.thumb, doors: r.doors,
+        lines: r.lines.map((l) => ({ seed: l.seed, pts: l.map((p) => [round(p.x), round(p.y)]) })),
+      })),
+    };
+    try {
+      localStorage.setItem("walk-world", JSON.stringify(world));
+    } catch (e) {}
+  }, 400);
+}
+
+function loadWorld() {
+  let world;
+  try {
+    world = JSON.parse(localStorage.getItem("walk-world"));
+  } catch (e) {}
+  if (!world || !world.rooms || !world.rooms.length) {
+    makeRoom("outside", "Outside");
+    lines = room().lines;
+    return;
+  }
+  rooms = world.rooms.map((r) => ({
+    ...r,
+    history: [],
+    ink: null,
+    lines: r.lines.map((l) => seeded(l.pts.map(([x, y]) => ({ x, y })), l.seed)),
+  }));
+  roomCount = world.count || rooms.length;
+  roomIndex = max(0, rooms.findIndex((r) => r.id == world.at));
+  lines = room().lines;
+  document.body.dataset.room = isOutside() ? "outside" : "inside";
+  if (isOutside() && SKIES[room().sky]) skyName = room().sky;
 }
 
 function setPlacingDoor(on) {
