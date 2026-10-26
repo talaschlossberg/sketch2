@@ -53,10 +53,7 @@ function artPicture(f) {
 // ---- putting frames up ----
 
 function setPlacingFrame(on) {
-  placingFrame = on;
-  document.getElementById("frame").classList.toggle("on", on);
-  if (on) showStatus("Drag on the wall to put up a frame.");
-  else document.getElementById("status").hidden = true;
+  setTool(on ? "frame" : "draw");
 }
 
 function startFrame(x, y) {
@@ -234,7 +231,6 @@ function hookArt() {
   document.getElementById("artDone").onclick = () => closeArtEditor(true);
   document.getElementById("artCancel").onclick = () => closeArtEditor(false);
   document.getElementById("artDelete").onclick = (e) => deleteEditingFrame(e.currentTarget);
-  document.getElementById("frame").onclick = () => setPlacingFrame(!placingFrame);
   window.addEventListener("resize", () => editingFrame && fitArtCanvas());
   markPens();
 }

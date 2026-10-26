@@ -491,8 +491,5 @@ function useWorld(world) {
 }
 
 function setPlacingDoor(on) {
-  placingDoor = on;
-  document.getElementById("door").classList.toggle("on", on);
-  if (on) showStatus("Click on a line to put the door there.");
-  else document.getElementById("status").hidden = true;
+  setTool(on ? "door" : "draw");
 }

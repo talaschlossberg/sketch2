@@ -73,11 +73,11 @@ function placeThing(x, y) {
 }
 
 function setPlacingThing(name) {
+  if (!name) return setTool("draw");
+  setTool("thing");
   placingThing = name;
   document.getElementById("thingChoice").hidden = true;
-  document.getElementById("thing").classList.toggle("on", !!name);
-  if (name) showStatus("Click on a line to put the " + THINGS[name].label.toLowerCase() + " there.");
-  else document.getElementById("status").hidden = true;
+  showStatus("Click on a line to put the " + THINGS[name].label.toLowerCase() + " there.");
 }
 
 function hookThings() {
@@ -92,10 +92,5 @@ function hookThings() {
     b.onclick = () => setPlacingThing(name);
     list.appendChild(b);
   }
-  document.getElementById("thing").onclick = () => {
-    if (placingThing) return setPlacingThing(null);
-    let box = document.getElementById("thingChoice");
-    box.hidden = !box.hidden;
-  };
   document.getElementById("noThing").onclick = () => setPlacingThing(null);
 }

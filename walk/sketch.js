@@ -75,7 +75,7 @@ async function useFiles(files, remember) {
     for (let f of files) els.push(await fileToImage(f));
     walker = prepareFrames(els);
     framesFailed = false;
-    showStatus(files.length + " frames loaded. If he walks backwards, press Turn around.", 5000);
+    showStatus(files.length + " frames loaded.", 4000);
     if (remember) rememberFrames(files, drawnFacing);
   } catch (e) {
     showStatus("Couldn't open those pictures. Try PNG or JPG files.");
@@ -91,7 +91,7 @@ function showStatus(text, ms) {
 }
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
+  createCanvas(worldWidth(), windowHeight);
   loadBuiltInFrames();
   loadWorld();
   guy.y = floorY();
@@ -102,6 +102,7 @@ function setup() {
   loadThings();
   hookThings();
   hookArt();
+  hookTools();
   hookSkyButtons();
 }
 
@@ -118,6 +119,7 @@ function draw() {
   drawOpening();
   drawGuy();
   drawTrip();
+  drawEraserCursor();
 }
 
 // ---- moving ----
@@ -284,6 +286,8 @@ function mousePressed(e) {
   if (placingDoor) return placeDoor(mouseX, mouseY);
   if (placingThing) return placeThing(mouseX, mouseY);
   if (placingFrame) return startFrame(mouseX, mouseY);
+  if (tool == "erase") return eraseStart(mouseX, mouseY);
+  if (tool == "thing") return; // waiting for a pick from the list
   let f = frameAt(mouseX, mouseY);
   if (f) return openArtEditor(f);
   drawing = [{ x: mouseX, y: mouseY }];
@@ -293,6 +297,10 @@ function mousePressed(e) {
 }
 
 function mouseDragged() {
+  if (erasing) {
+    eraseAt(mouseX, mouseY);
+    return false;
+  }
   if (frameDraft) {
     frameDraft.x1 = mouseX;
     frameDraft.y1 = mouseY;
@@ -308,6 +316,7 @@ function mouseDragged() {
 }
 
 function mouseReleased() {
+  if (erasing) return eraseEnd();
   if (frameDraft) return finishFrame();
   if (drawing && drawing.length < 2) {
     lines.pop();
@@ -386,6 +395,7 @@ function keyPressed() {
 
 function undo() {
   let last = room().history.pop();
+  if (last && last.snapshot) restoreSnapshot(last.snapshot);
   if (last == "line") lines.pop();
   if (last == "door") room().doors.pop();
   if (last == "thing") room().things.pop();
@@ -396,7 +406,7 @@ function undo() {
 
 function windowResized() {
   let wasOnFloor = guy.onGround && abs(guy.y - floorY()) < 1;
-  resizeCanvas(windowWidth, windowHeight);
+  resizeCanvas(worldWidth(), windowHeight);
   if (wasOnFloor) guy.y = floorY();
   inkDirty = true;
 }
@@ -404,7 +414,6 @@ function windowResized() {
 function hookButtons() {
   document.getElementById("undo").onclick = undo;
   document.getElementById("clear").onclick = resetLines;
-  document.getElementById("door").onclick = () => setPlacingDoor(!placingDoor);
   document.getElementById("mapButton").onclick = toggleMap;
   for (let b of document.querySelectorAll("#doorChoice [data-kind]")) b.onclick = () => linkToNewRoom(b.dataset.kind);
   document.getElementById("pickOnMap").onclick = () => {
@@ -424,11 +433,6 @@ function hookButtons() {
     picker.value = "";
   };
 
-  document.getElementById("turn").onclick = async () => {
-    drawnFacing *= -1;
-    let saved = await rememberedFrames();
-    if (saved) rememberFrames(saved.files.map((f) => Object.assign(f.blob, { label: f.name })), drawnFacing);
-  };
 
   document.addEventListener("dragover", (e) => {
     e.preventDefault();
