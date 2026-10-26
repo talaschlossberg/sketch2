@@ -47,6 +47,11 @@ canvas {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
+body[data-room="room"] #hint {
+  color: #3a332c;
+  text-shadow: none;
+}
+
 #status {
   position: fixed;
   left: 50%;

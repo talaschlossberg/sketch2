@@ -1,8 +1,9 @@
-// Sky: three backdrops to pick from. Sunset is a photo; day and night are
-// painted here, with film grain so they sit alongside the photo.
+// Sky: backdrops to pick from. Photo is a film photo; sunset, day and night
+// are painted here, with film grain so they sit alongside it.
 // Used by sketch.js.
 
 let SKIES = {
+  photo: { label: "Photo", ink: 17 },
   sunset: { label: "Sunset", ink: 17 },
   day: { label: "Day", ink: 17 },
   night: { label: "Night", ink: 240 },
@@ -57,12 +58,12 @@ function drawSky() {
   if (!skyLayer || skyLayer.width != width || skyLayer.height != height) paintSky();
   image(skyLayer, 0, 0, width, height);
 
-  if (skyName == "day" && cloudLayer) {
+  if ((skyName == "day" || skyName == "sunset") && cloudLayer) {
     cloudDrift = (cloudDrift + 0.15) % cloudLayer.width;
     image(cloudLayer, -cloudDrift, 0, cloudLayer.width, height);
     image(cloudLayer, cloudLayer.width - cloudDrift, 0, cloudLayer.width, height);
   }
-  if (skyName != "sunset") image(grain, 0, 0, width, height);
+  if (skyName != "photo") image(grain, 0, 0, width, height);
 }
 
 function paintSky() {
@@ -71,12 +72,15 @@ function paintSky() {
     grain = makeGrain(width, height);
   }
   let g = skyLayer;
-  if (skyName == "sunset") {
+  if (skyName == "photo") {
     g.background(120, 140, 170);
     if (skyPhoto) coverImage(g, skyPhoto);
+  } else if (skyName == "sunset") {
+    gradient(g, color(46, 58, 108), color(250, 176, 136), color(168, 128, 166));
+    cloudLayer = makeClouds(width, height, sunsetCloud);
   } else if (skyName == "day") {
     gradient(g, color(92, 138, 196), color(214, 228, 238));
-    cloudLayer = makeClouds(width, height);
+    cloudLayer = makeClouds(width, height, dayCloud);
   } else {
     gradient(g, color(9, 14, 38), color(46, 58, 104));
     stars(g);
@@ -91,16 +95,32 @@ function coverImage(g, img) {
   g.image(img, (g.width - w) / 2, (g.height - h) / 2, w, h);
 }
 
-function gradient(g, top, bottom) {
+// top to bottom, optionally through a middle colour just over halfway down
+function gradient(g, top, bottom, middle) {
   for (let y = 0; y < g.height; y++) {
-    g.stroke(lerpColor(top, bottom, pow(y / g.height, 1.3)));
+    let t = pow(y / g.height, 1.3);
+    let c = lerpColor(top, bottom, t);
+    if (middle) c = t < 0.55 ? lerpColor(top, middle, t / 0.55) : lerpColor(middle, bottom, (t - 0.55) / 0.45);
+    g.stroke(c);
     g.line(0, y, g.width, y);
   }
 }
 
+// cloud colour for a given thickness (0 to 1) and height up the sky (0 top, 1 bottom)
+function dayCloud(c, y) {
+  let shade = 255 - (1 - y) * 18 - c * 22; // a little grey in the thick parts
+  return [shade, shade, shade + 6];
+}
+
+// lit pink and orange from below, violet grey where they're thick
+function sunsetCloud(c, y) {
+  let lit = constrain(1.25 - c * 0.8 + y * 0.4, 0, 1);
+  return [lerp(92, 255, lit), lerp(90, 128, lit), lerp(138, 124, lit)];
+}
+
 // Soft heaps of cloud. Painted small and scaled up so they stay soft and quick to draw;
 // the pattern wraps round sideways so the layer can drift forever.
-function makeClouds(w, h) {
+function makeClouds(w, h, tint) {
   let scaleDown = 4;
   let cw = ceil((w * 1.5) / scaleDown);
   let ch = ceil(h / scaleDown);
@@ -121,12 +141,12 @@ function makeClouds(w, h) {
         amp *= 0.5;
         f *= 2;
       }
-      let c = constrain((v - 0.48) * 4.5, 0, 1) * fade;
+      let c = constrain((v - 0.46) * 5, 0, 1) * fade;
       let i = (y * cw + x) * 4;
-      let shade = 255 - (1 - y / ch) * 18 - c * 22; // a little grey in the thick parts
-      small.pixels[i] = shade;
-      small.pixels[i + 1] = shade;
-      small.pixels[i + 2] = shade + 6;
+      let [red, green, blue] = tint(c, y / ch);
+      small.pixels[i] = red;
+      small.pixels[i + 1] = green;
+      small.pixels[i + 2] = blue;
       small.pixels[i + 3] = c * 235;
     }
   }

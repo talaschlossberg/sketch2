@@ -9,11 +9,10 @@ let walker = null; // what prepareFrames returns
 let drawnFacing = 1; // which way the frames are drawn: -1 left, 1 right
 let framesFailed = false;
 
-let lines = []; // every line you draw: a list of {x, y} points, plus a seed for its wobble
+let lines = rooms[0].lines; // the lines drawn in the room she's in: lists of {x, y} points, plus a seed for its wobble
 let drawing = null;
 let FLOOR_GAP = 40; // the floor runs along the bottom of the window, this far up
-let ink; // the lines, drawn once into their own layer and redrawn only when they change
-let inkDirty = true;
+let inkDirty = true; // each room's lines are drawn once into its own layer, and again only when they change
 
 let guy = {
   x: 120,
@@ -32,6 +31,7 @@ let JUMP = 11;
 let STEP_UP = 18; // tallest bump he can step onto without jumping
 
 let held = { left: false, right: false, up: false };
+let upTapped = false; // a quick tap of up can fall between two frames, so it's caught here too
 
 // p5's loadImage fetches the file first, which some hosts block,
 // so frames are loaded as plain images and copied into p5 images
@@ -101,13 +101,16 @@ function setup() {
 }
 
 function draw() {
-  drawSky();
+  if (roomIndex == 0) drawSky();
+  else drawRoom();
 
   if (inkDirty) drawInk();
-  image(ink, 0, 0, width, height);
+  image(room().ink, 0, 0, width, height);
 
-  moveGuy();
+  drawDoorHint();
+  if (!trip) moveGuy();
   drawGuy();
+  drawTrip();
 }
 
 // ---- moving ----
@@ -118,7 +121,12 @@ function moveGuy() {
   if (keyIsDown(RIGHT_ARROW) || held.right) dir += 1;
   if (dir != 0) guy.facing = dir;
 
-  if ((keyIsDown(UP_ARROW) || held.up) && guy.onGround) {
+  // up goes through a door if she's at one, and jumps if not
+  let up = upTapped || keyIsDown(UP_ARROW) || held.up;
+  upTapped = false;
+  if (up && guy.onGround) {
+    let door = doorNear();
+    if (door) return goThrough(door);
     guy.vy = -JUMP;
     guy.onGround = false;
   }
@@ -178,14 +186,15 @@ function moveGuy() {
 
 // a line crossing his body at x is too steep to step over
 function wallAt(x) {
-  let y = groundBelow(x, guy.y - GUY_HEIGHT * 0.8);
+  let y = groundBelow(x, guy.y - GUY_HEIGHT * 0.8, true);
   return y != null && y < guy.y - STEP_UP;
 }
 
 // highest line at x that is at or below fromY
-function groundBelow(x, fromY) {
+function groundBelow(x, fromY, wallsOnly = false) {
   let best = null;
-  for (let l of [floorLine(), ...lines]) {
+  for (let l of [...solidLines(), ...lines]) {
+    if (wallsOnly && l.platform) continue;
     for (let i = 1; i < l.length; i++) {
       let a = l[i - 1];
       let b = l[i];
@@ -245,7 +254,7 @@ function drawStandIn() {
 // ---- drawing lines ----
 
 function floorY() {
-  return height - FLOOR_GAP;
+  return roomIndex == 0 ? height - FLOOR_GAP : round(height * 0.8);
 }
 
 // the window can change size after the page opens, so the floor is worked out each time
@@ -256,15 +265,19 @@ function floorLine() {
 }
 
 function resetLines() {
-  lines = [];
+  lines.length = 0;
+  room().doors = [];
+  room().history = [];
   inkDirty = true;
 }
 
 function mousePressed(e) {
   if (e && e.target && e.target.tagName != "CANVAS") return;
+  if (placingDoor) return placeDoor(mouseX, mouseY);
   drawing = [{ x: mouseX, y: mouseY }];
   drawing.seed = random(1000);
   lines.push(drawing);
+  room().history.push("line");
 }
 
 function mouseDragged() {
@@ -278,24 +291,31 @@ function mouseDragged() {
 }
 
 function mouseReleased() {
-  if (drawing && drawing.length < 2) lines.pop();
+  if (drawing && drawing.length < 2) {
+    lines.pop();
+    room().history.pop();
+  }
   drawing = null;
   inkDirty = true;
 }
 
 function drawInk() {
-  if (!ink || ink.width != width || ink.height != height) ink = createGraphics(width, height);
+  let r = room();
+  if (!r.ink || r.ink.width != width || r.ink.height != height) r.ink = createGraphics(width, height);
+  let ink = r.ink;
   ink.clear();
   ink.noStroke();
-  ink.fill(inkColour());
-  for (let l of [floorLine(), ...lines]) inkLine(ink, l);
+  ink.fill(inkHere());
+  let fixed = roomIndex == 1 ? roomDrawing() : [];
+  for (let l of [...solidLines(), ...fixed, ...lines]) inkLine(ink, l);
+  for (let d of doorsHere()) inkDoor(ink, d);
   inkDirty = false;
 }
 
 // A pen line like the ones he's drawn with: smoothed, wobbling a little,
 // and a little thicker and thinner along its length.
 function inkLine(g, pts, seed = pts.seed) {
-  pts = roundCorners(pts);
+  if (!pts.sharp) pts = roundCorners(pts); // drawn shapes like doors and windows keep their corners
   let spots = [];
   let d = 0;
   for (let i = 1; i < pts.length; i++) {
@@ -334,6 +354,7 @@ function roundCorners(pts) {
 }
 
 function keyPressed() {
+  if (keyCode == UP_ARROW) upTapped = true;
   if (keyCode == LEFT_ARROW || keyCode == RIGHT_ARROW || keyCode == UP_ARROW || keyCode == DOWN_ARROW) {
     return false; // don't scroll the page
   }
@@ -341,7 +362,9 @@ function keyPressed() {
 }
 
 function undo() {
-  lines.pop();
+  let last = room().history.pop();
+  if (last == "line") lines.pop();
+  if (last == "door") room().doors.pop();
   inkDirty = true;
 }
 
@@ -355,6 +378,7 @@ function windowResized() {
 function hookButtons() {
   document.getElementById("undo").onclick = undo;
   document.getElementById("clear").onclick = resetLines;
+  document.getElementById("door").onclick = () => setPlacingDoor(!placingDoor);
 
   let picker = document.getElementById("folder");
   if (!("webkitdirectory" in picker)) picker.removeAttribute("webkitdirectory"); // phones: pick the files instead
