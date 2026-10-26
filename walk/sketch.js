@@ -1,8 +1,11 @@
 // Walk: draw lines, then walk the little guy along them with the arrow keys.
-// Frames are walk/frames/00010walk.png ... 00023walk.png, drawn facing right.
+// Frames are walk/frames/walk1.png ... walk5.png, drawn facing left.
+// The legs look alike, so five frames cover one step and loop.
 
-let FIRST_FRAME = 10;
-let LAST_FRAME = 23;
+let FRAME_COUNT = 5;
+let DRAWN_FACING = -1;
+let STANDING_FRAME = 2;
+let JUMPING_FRAME = 4;
 
 let frames = [];
 let missing = 0;
@@ -20,19 +23,18 @@ let guy = {
   stride: 0, // distance walked, drives the frame
 };
 
-let GUY_HEIGHT = 140;
+let GUY_HEIGHT = 160;
 let SPEED = 3;
 let GRAVITY = 0.6;
 let JUMP = 11;
 let STEP_UP = 18; // tallest bump he can step onto without jumping
-let PIXELS_PER_FRAME = 7;
+let PIXELS_PER_FRAME = (GUY_HEIGHT * 0.41) / FRAME_COUNT; // one step is about 0.41 of his height
 
 let held = { left: false, right: false, up: false };
 
 function preload() {
-  for (let n = FIRST_FRAME; n <= LAST_FRAME; n++) {
-    let name = "frames/" + nf(n, 5) + "walk.png";
-    frames.push(loadImage(name, () => {}, () => missing++));
+  for (let n = 1; n <= FRAME_COUNT; n++) {
+    frames.push(loadImage("frames/walk" + n + ".png", () => {}, () => missing++));
   }
 }
 
@@ -144,13 +146,15 @@ function groundBelow(x, fromY) {
 function drawGuy() {
   push();
   translate(guy.x, guy.y);
-  scale(guy.facing, 1);
 
   if (frames.length == 0) {
+    scale(guy.facing, 1);
     drawStandIn();
   } else {
-    let i = guy.onGround ? floor(guy.stride / PIXELS_PER_FRAME) % frames.length : 2;
-    if (guy.stride == 0 && guy.onGround) i = 0;
+    scale(guy.facing * DRAWN_FACING, 1);
+    let i = floor(guy.stride / PIXELS_PER_FRAME) % frames.length;
+    if (guy.stride == 0) i = STANDING_FRAME;
+    if (!guy.onGround) i = JUMPING_FRAME;
     let s = GUY_HEIGHT / crop.h;
     let w = crop.w * s;
     image(frames[i], -w / 2, -GUY_HEIGHT, w, GUY_HEIGHT, crop.x, crop.y, crop.w, crop.h);

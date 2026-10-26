@@ -29,4 +29,4 @@ Everything is plain HTML/CSS/JS with no build step.
 
 Open `walk/index.html` on a web server. Drag to draw lines; the left and right arrow keys walk him along them and up jumps (on a phone, use the on-screen arrows). He climbs gentle slopes, stops at steep ones, falls off the ends and drops back in from the top if he leaves the screen. **Undo** removes the last line, **Clear** removes them all.
 
-His frames are `walk/frames/00010walk.png` to `00023walk.png`, facing right. The walk cycle advances with the distance he covers, and the frames flip when he walks left. Until the frames are there, a stick figure stands in.
+His frames are `walk/frames/walk1.png` to `walk5.png`, drawn facing left with the inside of his body filled so lines behind him are hidden. The walk cycle advances with the distance he covers, and he turns to face the way he is walking. Until the frames are there, a stick figure stands in.
