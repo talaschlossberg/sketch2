@@ -14,6 +14,8 @@ let WALL = [244, 239, 230];
 let FLOORBOARDS = [214, 200, 180];
 let DOOR_PAPER = [250, 248, 242];
 let ROOM_INK = 17;
+let doorPhoto = null; // a real door, cut from a film photo and straightened (doors/door.jpg)
+let DOOR_PANEL = { x1: 0.075, x2: 0.94, y1: 0.039, y2: 0.99 }; // where the grey panel sits inside its frame
 let KIND_NAMES = { outside: "Outside", room: "Room", empty: "Empty room" };
 
 function makeRoom(kind, name, mapAt) {
@@ -52,7 +54,20 @@ function floorFor(kind) {
 }
 
 function doorSize() {
-  return { w: GUY_HEIGHT * 0.55, h: GUY_HEIGHT * 1.22 };
+  return { w: GUY_HEIGHT * 1.25 * (300 / 630), h: GUY_HEIGHT * 1.25 };
+}
+
+function doorPhotoUrl() {
+  return "doors/door.jpg";
+}
+
+function loadDoorPhoto() {
+  urlToImage(doorPhotoUrl()).then((el) => {
+    doorPhoto = createImage(el.naturalWidth, el.naturalHeight);
+    doorPhoto.drawingContext.drawImage(el, 0, 0);
+    for (let r of rooms) r.ink = null;
+    inkDirty = true;
+  }, () => {});
 }
 
 // ---- the room's layout, worked out from the window size ----
@@ -204,11 +219,15 @@ function clipTo(r, paint) {
   pop();
 }
 
-// a door: paper-coloured, two panels and a knob, drawn in pen
+// a door: the photo once it has loaded, until then one drawn in pen
 function inkDoor(g, d) {
   let { w, h } = doorSize();
   let x = d.x - w / 2;
   let y = d.y - h;
+  if (doorPhoto) {
+    g.image(doorPhoto, x, y, w, h);
+    return;
+  }
   g.fill(DOOR_PAPER);
   g.rect(x, y, w, h);
   g.fill(inkHere());
@@ -241,14 +260,27 @@ function goThrough(door) {
   trip = { door, t: 0, switched: false };
 }
 
-// door opening, fade out, change rooms, fade in
-function drawTrip() {
+// the door swinging open, drawn behind her so she steps into the doorway
+function drawOpening() {
   if (!trip) return;
-  trip.t += deltaTime / 1000;
   let { w, h } = doorSize();
   let d = trip.door;
-
-  if (!trip.switched) {
+  if (!trip.switched && doorPhoto) {
+    // the grey panel swings in on its hinges, leaving the dark doorway in its frame
+    let open = constrain(trip.t / 0.35, 0, 1);
+    let P = DOOR_PANEL;
+    let px = d.x - w / 2 + P.x1 * w;
+    let py = d.y - h + P.y1 * h;
+    let pw = (P.x2 - P.x1) * w;
+    let ph = (P.y2 - P.y1) * h;
+    noStroke();
+    fill(24, 22, 22);
+    rect(px, py, pw, ph);
+    let src = { x: P.x1 * doorPhoto.width, y: P.y1 * doorPhoto.height, w: (P.x2 - P.x1) * doorPhoto.width, h: (P.y2 - P.y1) * doorPhoto.height };
+    image(doorPhoto, px, py, pw * (1 - open * 0.85), ph, src.x, src.y, src.w, src.h);
+    fill(0, open * 60);
+    rect(px, py, pw * (1 - open * 0.85), ph);
+  } else if (!trip.switched) {
     let open = constrain(trip.t / 0.35, 0, 1);
     noStroke();
     fill(28, 24, 22);
@@ -260,6 +292,14 @@ function drawTrip() {
     quad(d.x - w / 2, d.y - h, d.x - w / 2 + panel, d.y - h - open * 8, d.x - w / 2 + panel, d.y + open * 8, d.x - w / 2, d.y);
     noStroke();
   }
+
+}
+
+// fade out, change rooms, fade in
+function drawTrip() {
+  if (!trip) return;
+  trip.t += deltaTime / 1000;
+  let d = trip.door;
 
   let fade = 0;
   if (trip.t < 0.35) fade = 0;

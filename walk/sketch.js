@@ -98,6 +98,7 @@ function setup() {
   hookButtons();
   hookMap();
   loadSky();
+  loadDoorPhoto();
   hookSkyButtons();
 }
 
@@ -110,6 +111,7 @@ function draw() {
 
   drawDoorHint();
   if (!trip && !mapOpen) moveGuy();
+  drawOpening();
   drawGuy();
   drawTrip();
 }
