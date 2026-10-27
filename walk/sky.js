@@ -1,21 +1,12 @@
-// Sky: backdrops to pick from. Your photo is a photo of your own for each outside
-// (a film sunset until you choose one); sunset, day and night are painted here,
-// with film grain so they sit alongside it.
+// Sky: the painted skies the walls use (blue, clouds, sunset, night, with film
+// grain), and your own photo for a place's wall (a film sunset until you choose one).
 // Used by sketch.js.
 
-let SKIES = {
-  photo: { label: "Your photo", ink: 17 },
-  sunset: { label: "Sunset", ink: 17 },
-  day: { label: "Day", ink: 17 },
-  night: { label: "Night", ink: 240 },
-};
-
-let skyName = "sunset";
+let skyName = "day"; // the last sky picked: what a room's window looks out on
 let skyPhoto = null; // the film sunset, shown until you choose a photo of your own
 let ownPhotos = {}; // your photos, loaded: picture data -> p5 image
 let ownPhotoSrc = null; // the photo of your own the sky shows now, if any
 let skyLayer = null; // the sky drawn at the window's size, redrawn only on resize or change
-let cloudLayer = null; // day clouds, drawn wide enough to drift and wrap
 let grain = null;
 let cloudDrift = 0;
 
@@ -24,45 +15,21 @@ function skyPhotoUrl() {
 }
 
 function loadSky() {
-  try {
-    let saved = localStorage.getItem("walk-sky");
-    if (SKIES[saved]) skyName = saved;
-  } catch (e) {}
-  if (isOutside() && SKIES[room().sky]) skyName = room().sky; // she's outside: that place's own sky
   urlToImage(skyPhotoUrl()).then((el) => {
     skyPhoto = createImage(el.naturalWidth, el.naturalHeight);
     skyPhoto.drawingContext.drawImage(el, 0, 0);
     skyLayer = null;
+    worldKey = "";
   }, () => {});
-  markSkyButtons();
 }
 
-// each outside keeps its own sky; rooms look out on the last one picked
-function chooseSky(name) {
+function setSkyName(name) {
+  if (name == skyName) return;
   skyName = name;
   skyLayer = null;
-  if (typeof rooms != "undefined" && rooms.length && isOutside()) {
-    room().sky = name;
-    saveWorld();
-  }
-  inkDirty = true; // the lines change colour with the sky
-  markSkyButtons();
-  try {
-    localStorage.setItem("walk-sky", name);
-  } catch (e) {}
 }
 
-function markSkyButtons() {
-  for (let b of document.querySelectorAll("#skies [data-sky]")) {
-    b.classList.toggle("on", b.dataset.sky == skyName);
-  }
-  document.body.dataset.sky = skyName;
-  // the photo can be changed while it's showing, outside
-  let change = document.getElementById("changePhoto");
-  if (change) change.hidden = !(skyName == "photo" && rooms.length && isOutside());
-}
-
-// the sky shows this outside's own photo, or the film sunset if it has none
+// the sky shows this place's own photo, or the film sunset if it has none
 function useOwnPhoto(src) {
   ownPhotoSrc = src || null;
   skyLayer = null;
@@ -72,6 +39,7 @@ function useOwnPhoto(src) {
       img.drawingContext.drawImage(el, 0, 0);
       ownPhotos[src] = img;
       skyLayer = null;
+      worldKey = "";
     }, () => {});
   }
 }
@@ -80,7 +48,7 @@ function photoForSky() {
   return (ownPhotoSrc && ownPhotos[ownPhotoSrc]) || skyPhoto;
 }
 
-// a photo of your own for this outside's sky, kept with the world
+// a photo of your own for this place's wall, kept with the world
 function setOwnPhoto(file) {
   fileToImage(file).then((el) => {
     let c = document.createElement("canvas");
@@ -91,42 +59,40 @@ function setOwnPhoto(file) {
     let src = c.toDataURL("image/jpeg", 0.86);
     room().skyPhoto = src;
     useOwnPhoto(src);
-    chooseSky("photo");
+    chooseWall("photo");
   }, () => showStatus("Couldn't open that picture. Try a JPG or PNG.", 4000));
 }
 
-function inkColour() {
-  return SKIES[skyName].ink;
-}
-
+// the last sky picked, full size: a room's window shows it, shrunk to fit
 function drawSky() {
-  if (!skyLayer || skyLayer.width != width || skyLayer.height != height) paintSky();
-  image(skyLayer, 0, 0, width, height);
-
-  if ((skyName == "day" || skyName == "sunset") && cloudLayer) {
-    cloudDrift = (cloudDrift + 0.15) % cloudLayer.width;
-    image(cloudLayer, -cloudDrift, 0, cloudLayer.width, height);
-    image(cloudLayer, cloudLayer.width - cloudDrift, 0, cloudLayer.width, height);
-  }
-  if (skyName != "photo") image(grain, 0, 0, width, height);
-}
-
-function paintSky() {
   if (!skyLayer || skyLayer.width != width || skyLayer.height != height) {
     skyLayer = createGraphics(width, height);
-    grain = makeGrain(width, height);
+    paintSkyInto(skyLayer, skyName);
   }
-  let g = skyLayer;
-  if (skyName == "photo") {
+  image(skyLayer, 0, 0, width, height);
+  if (skyName == "day" || skyName == "sunset") {
+    let clouds = cloudsFor(skyName);
+    image(clouds, -cloudDrift, 0, clouds.width, height);
+  }
+}
+
+let cloudLayers = {};
+
+// drifting clouds for a sky, made once per size
+function cloudsFor(name) {
+  let c = cloudLayers[name];
+  if (!c || c.height != height) c = cloudLayers[name] = makeClouds(width, height, name == "sunset" ? sunsetCloud : dayCloud);
+  return c;
+}
+
+function paintSkyInto(g, name) {
+  if (name == "photo") {
     g.background(120, 140, 170);
     if (photoForSky()) coverImage(g, photoForSky());
-  } else if (skyName == "sunset") {
-    gradient(g, color(46, 58, 108), color(250, 176, 136), color(168, 128, 166));
-    cloudLayer = makeClouds(width, height, sunsetCloud);
-  } else if (skyName == "day") {
-    gradient(g, color(92, 138, 196), color(214, 228, 238));
-    cloudLayer = makeClouds(width, height, dayCloud);
-  } else {
+  } else if (name == "sunset") gradient(g, color(46, 58, 108), color(250, 176, 136), color(168, 128, 166));
+  else if (name == "day") gradient(g, color(92, 138, 196), color(214, 228, 238));
+  else if (name == "blue") gradient(g, color(70, 128, 176), color(168, 206, 214));
+  else {
     gradient(g, color(9, 14, 38), color(46, 58, 104));
     stars(g);
   }
@@ -146,8 +112,9 @@ function gradient(g, top, bottom, middle) {
     let t = pow(y / g.height, 1.3);
     let c = lerpColor(top, bottom, t);
     if (middle) c = t < 0.55 ? lerpColor(top, middle, t / 0.55) : lerpColor(middle, bottom, (t - 0.55) / 0.45);
-    g.stroke(c);
-    g.line(0, y, g.width, y);
+    g.noStroke();
+    g.fill(c);
+    g.rect(0, y, g.width, 1.5);
   }
 }
 
@@ -231,14 +198,3 @@ function makeGrain(w, h) {
   return g;
 }
 
-function hookSkyButtons() {
-  let input = document.getElementById("skyPhotoInput");
-  document.getElementById("changePhoto").onclick = () => input.click();
-  input.onchange = () => {
-    if (input.files[0]) setOwnPhoto(input.files[0]);
-    input.value = "";
-  };
-  for (let b of document.querySelectorAll("#skies [data-sky]")) {
-    b.onclick = () => chooseSky(b.dataset.sky);
-  }
-}

@@ -40,7 +40,7 @@ function renderMap() {
 
 function makeCard(r) {
   let card = document.createElement("div");
-  card.className = "card " + r.kind + (r == room() ? " here" : "");
+  card.className = "card " + (SKY_WALLS.includes(wallOf(r)) ? "outside" : "room") + (r == room() ? " here" : "");
   card.style.left = r.map.x + "px";
   card.style.top = r.map.y + "px";
   card.dataset.id = r.id;
@@ -73,7 +73,7 @@ function makeCard(r) {
 
   let info = document.createElement("div");
   info.className = "info";
-  let kind = KIND_NAMES[r.kind];
+  let kind = WALLS[wallOf(r)].label + " · " + FLOORS[floorOf(r)].label;
   let doorCount = r.doors.length == 1 ? "1 door" : r.doors.length + " doors";
   info.textContent = r == room() ? kind + " · " + doorCount + " · she's here" : kind + " · " + doorCount;
   card.appendChild(info);

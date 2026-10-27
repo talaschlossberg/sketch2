@@ -22,12 +22,8 @@
     </nav>
     <header id="bar">
       <span id="roomName"></span>
-      <div id="skies">
-        <button data-sky="photo">Your photo</button>
-        <button data-sky="sunset">Sunset</button>
-        <button data-sky="day">Day</button>
-        <button data-sky="night">Night</button>
-      </div>
+      <button id="wallButton" class="world-button" aria-haspopup="true"><span class="cap">Wall</span><span id="wallLabel"></span></button>
+      <button id="floorButton" class="world-button" aria-haspopup="true"><span class="cap">Floor</span><span id="floorLabel"></span></button>
       <button id="changePhoto" hidden>Change photo</button>
       <span class="bar-gap"></span>
       <button id="mapButton">Map</button>
@@ -35,6 +31,8 @@
       <button id="clear">Clear</button>
       <button id="help" title="Keys" aria-label="Keys">?</button>
     </header>
+    <div id="wallPicker" class="world-picker" hidden></div>
+    <div id="floorPicker" class="world-picker" hidden></div>
     <div id="hint" hidden>Arrow keys walk. Up jumps, or goes through a door. M opens the map.</div>
     <input id="imageInput" type="file" accept="image/*" hidden>
     <input id="skyPhotoInput" type="file" accept="image/*" hidden>
@@ -69,6 +67,7 @@
     </div>
     <script src="frames.js"></script>
     <script src="sky.js"></script>
+    <script src="world.js"></script>
     <script src="rooms.js"></script>
     <script src="map.js"></script>
     <script src="images.js"></script>

@@ -100,12 +100,11 @@ function setup() {
   hookFill();
   hookMake();
   hookTools();
-  hookSkyButtons();
+  hookWorld();
 }
 
 function draw() {
-  if (isOutside()) drawSky();
-  else drawRoom();
+  drawWorld();
 
   if (inkDirty) drawInk();
   image(room().ink, 0, 0, width, height);
@@ -115,6 +114,7 @@ function draw() {
   drawImageDraft();
   drawDrafts();
   drawOpening();
+  drawShadow();
   drawGuy();
   drawTrip();
   drawEraserCursor();
@@ -275,13 +275,14 @@ function drawStandIn() {
 // ---- drawing lines ----
 
 function floorY() {
-  return floorFor(room().kind);
+  return groundOf(room());
 }
 
 // the window can change size after the page opens, so the floor is worked out each time
 function floorLine() {
   let l = [{ x: -10, y: floorY() }, { x: width + 10, y: floorY() }];
   l.seed = 7;
+  l.unseen = floorOf() != "line"; // on a painted floor she walks the ground itself
   return l;
 }
 
@@ -366,7 +367,7 @@ function drawInk() {
   for (let f of r.images) inkImage(ink, f);
   ink.noStroke();
   ink.fill(inkHere());
-  for (let l of [...solidLines(), ...roomDrawing()]) inkLine(ink, l);
+  for (let l of [...solidLines(), ...roomDrawing()]) if (!l.unseen) inkLine(ink, l);
   for (let l of lines) {
     ink.fill(l.colour || inkHere()); // lines drawn in colour in older worlds keep it
     inkLine(ink, l);

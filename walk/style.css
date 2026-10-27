@@ -191,10 +191,82 @@ button:focus-visible {
   white-space: nowrap;
 }
 
-#skies {
+/* the wall and floor of this page */
+.world-button {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
 }
+
+.world-button .cap {
+  color: var(--muted);
+}
+
+.world-button:hover .cap {
+  color: var(--red);
+}
+
+.world-picker {
+  position: fixed;
+  top: calc(var(--bar) + 6px);
+  z-index: 7;
+  padding: 10px;
+  max-width: calc(100vw - 20px);
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, 120px);
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .world-picker {
+    left: 10px !important;
+    grid-template-columns: repeat(2, 120px);
+  }
+}
+
+.world-pick {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.world-pick canvas {
+  width: 120px;
+  height: 76px;
+  margin: 0;
+  border-radius: 8px;
+  border: 1px solid var(--hair);
+  display: block;
+}
+
+.world-pick:hover,
+.world-pick:active,
+.world-pick.on {
+  background: none;
+  color: var(--red);
+}
+
+.world-pick:hover canvas {
+  border-color: var(--ink);
+}
+
+.world-pick.on canvas {
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red);
+}
+
 
 .bar-gap {
   flex: 1;
