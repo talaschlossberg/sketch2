@@ -121,6 +121,7 @@ function draw() {
   drawSelection();
   drawSelectHover();
   syncPortalButton();
+  drawPortalMarks();
   showRoomName();
 }
 
@@ -306,6 +307,7 @@ function mousePressed(e) {
   if (tool == "image") return startImage(mouseX, mouseY);
   if (tool == "erase") return eraseStart(mouseX, mouseY);
   if (tool == "select") return startMove(mouseX, mouseY);
+  if (tool == "portal") return portalClick(mouseX, mouseY);
   if (tool == "path") return pathClick(mouseX, mouseY);
   if (tool == "fill") return fillAt(mouseX, mouseY);
   if (tool != "draw") return;
@@ -458,7 +460,7 @@ function hookButtons() {
     closeDoorChoice();
     openMap(pendingDoor);
   };
-  document.getElementById("portalButton").onclick = togglePortal;
+  document.getElementById("portalButton").onclick = () => togglePortal();
   document.getElementById("notYet").onclick = () => {
     pendingDoor = null;
     closeDoorChoice();

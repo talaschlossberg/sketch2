@@ -270,6 +270,48 @@ function portalArrival(p) {
   return { x, y: y == null ? floorY() : y };
 }
 
+// what the portal tool would act on: a photo or a drawing, not a door
+function portalTarget(x, y) {
+  let hit = itemAt(x, y);
+  return hit && hit.kind != "door" ? hit.item : null;
+}
+
+function portalClick(x, y) {
+  let it = portalTarget(x, y);
+  if (!it) return showStatus("Click a photo or a drawing to make it a portal.", 3000);
+  togglePortal(it);
+  if (!it.portal) showStatus("That's plain again.", 2000);
+}
+
+// with the portal tool out, every portal shows a dashed outline, and what's under the mouse is lit
+function drawPortalMarks() {
+  if (tool != "portal" || mapOpen) return;
+  let r = room();
+  let over = portalTarget(mouseX, mouseY);
+  push();
+  noFill();
+  strokeWeight(2);
+  for (let p of [...r.images, ...r.lines]) {
+    if (!p.portal && p != over) continue;
+    let b = portalBox(p);
+    stroke(193, 68, 42, p == over ? 255 : 170);
+    drawingContext.setLineDash(p.portal ? [7, 5] : []);
+    rect(b.x - 6, b.y - 6, b.w + 12, b.h + 12, 4);
+    if (p.portal) {
+      let to = roomById(p.to);
+      noStroke();
+      fill(193, 68, 42);
+      textFont(MONO);
+      textSize(11);
+      textAlign(LEFT, BOTTOM);
+      text(to ? "To " + to.name : "Leads nowhere yet", b.x - 6, b.y - 10);
+      noFill();
+    }
+  }
+  drawingContext.setLineDash([]);
+  pop();
+}
+
 // the bar's Portal switch, shown while a photo or a drawing is selected
 function syncPortalButton() {
   let it = tool == "select" && selected && stillHere(selected) && selected.kind != "door" ? selected.item : null;
@@ -283,10 +325,12 @@ function syncPortalButton() {
   document.getElementById("portalLabel").textContent = label;
 }
 
-function togglePortal() {
-  if (!selected || selected.kind == "door") return;
+function togglePortal(it) {
+  if (!it) {
+    if (!selected || selected.kind == "door") return;
+    it = selected.item;
+  }
   pushUndo();
-  let it = selected.item;
   if (it.portal) {
     it.portal = false;
     it.to = null;

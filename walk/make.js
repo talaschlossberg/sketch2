@@ -233,6 +233,7 @@ function drawSelectHover() {
     if (scaling || (h && dist(mouseX, mouseY, h.x, h.y) < 14)) cursor = "nwse-resize";
     else if (moving || itemAt(mouseX, mouseY)) cursor = "move";
   }
+  if (tool == "portal" && !mapOpen && portalTarget(mouseX, mouseY)) cursor = "pointer";
   drawingContext.canvas.style.cursor = cursor;
 }
 

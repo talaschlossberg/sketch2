@@ -12,6 +12,7 @@ let TOOL_HELP = {
   fill: "Click inside a shape you've drawn to fill it.",
   erase: "Drag over lines to rub them out. Click a door, photo or fill to take it away.",
   door: "Click on a line to put a door there.",
+  portal: "Click a photo or a drawing to make it a portal. Click a portal again to make it plain.",
 };
 
 function setTool(name) {
