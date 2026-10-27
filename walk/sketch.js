@@ -24,10 +24,10 @@ let guy = {
   angle: 0, // tilt to match the slope under his feet
 };
 
-let GUY_HEIGHT = 160;
+let GUY_HEIGHT = 215; // set by sizeGuy: this tall, or less on a short screen
 let SPEED = 2;
 let GRAVITY = 0.6;
-let JUMP = 11;
+let JUMP = 12.5;
 let STEP_UP = 18; // tallest bump he can step onto without jumping
 
 let held = { left: false, right: false, up: false };
@@ -89,6 +89,7 @@ function closeStatus() {
 
 function setup() {
   createCanvas(worldWidth(), worldHeight());
+  sizeGuy();
   loadFrames();
   loadWorld();
   guy.y = floorY();
@@ -207,21 +208,38 @@ function moveGuy() {
   }
 }
 
+function sizeGuy() {
+  GUY_HEIGHT = round(constrain(height * 0.3, 120, 215));
+}
+
 // a line crossing his body at x is too steep to step over
 function wallAt(x) {
   let y = groundBelow(x, guy.y - GUY_HEIGHT * 0.8, true);
   return y != null && y < guy.y - STEP_UP;
 }
 
+// a closed shape (it ends where it began) or a portal is a thing standing in the world:
+// she walks in front of it, as she does a door, and can only land on its flat parts
+function passThrough(l) {
+  if (l.platform || l.portal) return true;
+  if (l.length < 4) return false;
+  let a = l[0];
+  let z = l[l.length - 1];
+  let b = portalBox(l);
+  return b.w > 20 && b.h > 20 && dist(a.x, a.y, z.x, z.y) < max(24, min(b.w, b.h) * 0.25);
+}
+
 // highest line at x that is at or below fromY
 function groundBelow(x, fromY, wallsOnly = false) {
   let best = null;
   for (let l of [...solidLines(), ...lines]) {
-    if (wallsOnly && l.platform) continue;
+    let through = passThrough(l);
+    if (wallsOnly && through) continue;
     for (let i = 1; i < l.length; i++) {
       let a = l[i - 1];
       let b = l[i];
       if (x < min(a.x, b.x) || x > max(a.x, b.x)) continue;
+      if (through && abs(b.y - a.y) > abs(b.x - a.x) * 0.7) continue; // its sides are no ground
       let y = a.x == b.x ? min(a.y, b.y) : lerp(a.y, b.y, (x - a.x) / (b.x - a.x));
       if (y >= fromY && (best == null || y < best)) best = y;
     }
@@ -446,6 +464,7 @@ function undo() {
 function windowResized() {
   let wasOnFloor = guy.onGround && abs(guy.y - floorY()) < 1;
   resizeCanvas(worldWidth(), worldHeight());
+  sizeGuy();
   if (wasOnFloor) guy.y = floorY();
   inkDirty = true;
 }
