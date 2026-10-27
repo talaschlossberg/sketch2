@@ -13,6 +13,9 @@ let showTitle = true;
 let people = []; // everyone on screen, oldest first
 let personCount = 0; // how many have walked on since the start
 let hintTimer = null;
+let camX = 0; // how far the view has panned right, following the line
+let camSpeed = 0;
+let ROOM_AHEAD = 0.4; // share of the screen kept empty after the last one standing
 
 // pictures come from files, or from the page itself in the single-file version
 function pictureUrl(path) {
@@ -64,8 +67,24 @@ function draw() {
   let h = personHeight();
   let ground = groundY();
   for (let p of people) movePerson(p, h);
-  people = people.filter((p) => p.x > -h); // walked off the left
+  people = people.filter((p) => p.x - camX > -h); // walked off the left
+  panView(h);
+  push();
+  translate(-camX, 0);
   for (let p of people) drawPerson(p, h, ground);
+  pop();
+}
+
+// once the line reaches the far side, the view glides along so there's always white space after it
+function panView(h) {
+  let standing = people.filter((p) => p.stopped);
+  let end = standing.length ? max(standing.map((p) => p.x)) : 0;
+  let target = max(0, end + h * 0.2 - width * (1 - ROOM_AHEAD));
+  // a spring that settles without overshooting, so the pan eases in and out
+  let dt = min(deltaTime, 50) / 1000;
+  let w = 2.2;
+  camSpeed += ((target - camX) * w * w - camSpeed * 2 * w) * dt;
+  camX += camSpeed * dt;
 }
 
 // ---- sizes ----
@@ -98,7 +117,7 @@ function newPerson() {
 
   let look = lookFor(personCount);
   people.push({
-    x: width + personHeight() * 0.4,
+    x: camX + width + personHeight() * 0.4,
     stride: random(FRAME_COUNT) * walkFrames.stepPerFrame * personHeight(), // each starts at a different point in the stride, so they can stop anywhere
     frame: 0,
     stopping: false,
@@ -110,7 +129,7 @@ function newPerson() {
 
 function movePerson(p, h) {
   if (p.stopped) return;
-  let onScreen = p.x < width - h * 0.3; // pressing 1 twice quickly mustn't leave someone stuck off the edge
+  let onScreen = p.x - camX < width - h * 0.3; // pressing 1 twice quickly mustn't leave someone stuck off the edge
   if (p.stopping && onScreen && stopFrames.includes(p.frame)) {
     p.stopped = true;
     return;
@@ -135,7 +154,7 @@ function drawPerson(p, h, ground) {
 function undoPerson() {
   people.pop();
   let last = people[people.length - 1];
-  if (last && last.stopped && last.x < width) {
+  if (last && last.stopped && last.x - camX < width) {
     // whoever was standing last carries on, as if 1 hadn't been pressed
     last.stopped = false;
     last.stopping = false;
@@ -146,6 +165,8 @@ function undoPerson() {
 function startOver() {
   people = [];
   personCount = 0;
+  camX = 0;
+  camSpeed = 0;
   newPerson();
 }
 
