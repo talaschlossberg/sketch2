@@ -676,3 +676,7 @@ button.primary {
 #watchChannels {
   justify-content: center;
 }
+
+.pixel-pick img {
+  image-rendering: pixelated;
+}

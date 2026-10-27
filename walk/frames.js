@@ -4,13 +4,14 @@
 let PAPER = [255, 255, 255];
 
 // Turn plain <img> elements into p5 images plus everything drawGuy needs.
-function prepareFrames(els) {
+// pixel walkers come ready-made: no clean-up, and drawn with square pixels
+function prepareFrames(els, pixel = false) {
   let imgs = els.map((el) => {
     let img = createImage(el.naturalWidth, el.naturalHeight);
     img.drawingContext.drawImage(el, 0, 0);
     let data = img.drawingContext.getImageData(0, 0, img.width, img.height);
     // photos and video are used as they are; only line drawings get cleaned up
-    if (isLineArt(data)) {
+    if (!pixel && isLineArt(data)) {
       clearBackground(data);
       fillInside(data);
       img.drawingContext.putImageData(data, 0, 0);
@@ -40,6 +41,7 @@ function prepareFrames(els) {
   if (stepLength < 0.1) stepLength = 0.4; // feet barely move: guess a normal step
 
   return {
+    pixel,
     imgs,
     crop,
     standing: spreads.indexOf(narrowest),

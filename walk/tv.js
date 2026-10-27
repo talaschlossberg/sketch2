@@ -171,7 +171,9 @@ function walkerOnTV(g, s) {
   g.push();
   g.translate(s.x + s.w / 2, s.y + s.h * 0.94);
   g.scale(drawnFacing, 1);
+  g.drawingContext.imageSmoothingEnabled = !walker.pixel;
   g.image(imgs[i], -w / 2, -h, w, h, crop.x, crop.y, crop.w, crop.h);
+  g.drawingContext.imageSmoothingEnabled = true;
   g.pop();
 }
 

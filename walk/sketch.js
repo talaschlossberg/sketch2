@@ -39,6 +39,8 @@ let upTapped = false; // a quick tap of up can fall between two frames, so it's 
 let WALKERS = {
   film: { label: "Her (film)", frames: 22, facing: 1, url: (n) => frameUrl(n) },
   drawn: { label: "Him (drawing)", frames: 5, facing: -1, url: (n) => drawnUrl(n) },
+  herPixel: { label: "Her (pixel)", frames: 22, facing: 1, pixel: true, url: (n) => pixelUrl("her" + String(n).padStart(2, "0")) },
+  himPixel: { label: "Him (pixel)", frames: 5, facing: -1, pixel: true, url: (n) => pixelUrl("him" + n) },
 };
 
 async function loadBuiltInFrames() {
@@ -64,7 +66,7 @@ async function useWalker(name) {
   try {
     let els = [];
     for (let n = 1; n <= w.frames; n++) els.push(await urlToImage(w.url(n)));
-    walker = prepareFrames(els);
+    walker = prepareFrames(els, !!w.pixel);
     drawnFacing = w.facing;
     framesFailed = false;
     rememberWalker(name);
@@ -86,6 +88,10 @@ function urlToImage(url) {
     el.onerror = fail;
     el.src = url;
   });
+}
+
+function pixelUrl(name) {
+  return "pixel/" + name + ".png";
 }
 
 function drawnUrl(n) {
@@ -315,7 +321,9 @@ function drawGuy() {
     if (guy.stride == 0) i = walker.standing;
     if (!guy.onGround) i = walker.jumping;
     let w = (crop.w * GUY_HEIGHT) / crop.h;
+    drawingContext.imageSmoothingEnabled = !walker.pixel;
     image(imgs[i], -w / 2, -GUY_HEIGHT, w, GUY_HEIGHT, crop.x, crop.y, crop.w, crop.h);
+    drawingContext.imageSmoothingEnabled = true;
   }
   pop();
 }
