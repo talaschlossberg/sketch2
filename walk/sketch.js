@@ -318,6 +318,7 @@ function resetLines() {
 function mousePressed(e) {
   if (e && e.target && e.target != drawingContext.canvas) return; // buttons and the map
   document.getElementById("fillPicker").hidden = true;
+  document.getElementById("addonPicker").hidden = true;
   // a photo still waiting for its picture: click it to choose one
   let empty = imageAt(mouseX, mouseY);
   if (empty && !empty.art && tool != "erase" && tool != "select") return choosePhotoFor(empty);
@@ -326,6 +327,7 @@ function mousePressed(e) {
   if (tool == "erase") return eraseStart(mouseX, mouseY);
   if (tool == "select") return startMove(mouseX, mouseY);
   if (tool == "portal") return portalClick(mouseX, mouseY);
+  if (tool == "addon") return placeAddon(mouseX, mouseY);
   if (tool == "path") return pathClick(mouseX, mouseY);
   if (tool == "fill") return fillAt(mouseX, mouseY);
   if (tool != "draw") return;

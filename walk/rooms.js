@@ -249,7 +249,9 @@ function portalBox(p) {
     let ys = p.map((q) => q.y);
     return { x: min(xs), y: min(ys), w: max(xs) - min(xs), h: max(ys) - min(ys) };
   }
-  return p.w === undefined ? null : { x: p.x, y: p.y, w: p.w, h: p.h };
+  if (p.w === undefined) return null;
+  if (p.hot) return { x: p.x + p.hot.x0 * p.w, y: p.y + p.hot.y0 * p.h, w: (p.hot.x1 - p.hot.x0) * p.w, h: (p.hot.y1 - p.hot.y0) * p.h };
+  return { x: p.x, y: p.y, w: p.w, h: p.h };
 }
 
 // she's at a portal when she stands in front of it: across its width, and it reaches down to her
@@ -537,7 +539,7 @@ function saveWorld() {
       count: roomCount,
       rooms: rooms.map((r) => ({
         id: r.id, name: r.name, kind: r.kind, wall: r.wall, floor: r.floor, skyPhoto: r.skyPhoto, floorPhoto: r.floorPhoto, map: r.map, thumb: r.thumb, doors: r.doors,
-        images: r.images.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, portal: f.portal, to: f.to })),
+        images: r.images.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, portal: f.portal, to: f.to, addon: f.addon, hot: f.hot })),
         fills: r.fills.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, colour: f.colour })),
         lines: r.lines.map((l) => ({ seed: l.seed, colour: l.colour, sharp: l.sharp, portal: l.portal, to: l.to, pts: l.map((p) => [round(p.x), round(p.y)]) })),
       })),

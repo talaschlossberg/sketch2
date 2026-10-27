@@ -112,3 +112,64 @@ function hookImages() {
     pendingImage = null;
   };
 }
+
+// ---- add-ons: ready-made things to put in the world ----
+
+// each one is a picture standing on the ground; `door` is the part of it she goes in by
+// (fractions of the picture), and placing it asks where that door goes
+const ADDONS = {
+  house: { label: "House", aspect: 900 / 709, door: { x0: 0.277, x1: 0.349, y0: 0.714, y1: 0.982 } },
+};
+let addonName = "house";
+
+function addonUrl(name) {
+  if (name == "house") return houseUrl();
+}
+
+function houseUrl() {
+  return "things/house.webp";
+}
+
+// stands on whatever is under the click, as tall as fits the window
+function placeAddon(x, y) {
+  let a = ADDONS[addonName];
+  let base = groundBelow(x, y - 30);
+  if (base == null || base > floorY()) base = floorY();
+  let h = round(min(height * 0.8, GUY_HEIGHT * 3.4));
+  let w = round(h * a.aspect);
+  let f = { x: round(x - w / 2), y: base - h, w, h, art: addonUrl(addonName), addon: addonName, hot: { ...a.door }, portal: true, to: null };
+  pushUndo();
+  room().images.push(f);
+  inkDirty = true;
+  saveWorld();
+  setTool("select");
+  selected = { item: f, kind: "image" };
+  pendingDoor = f;
+  askWhereDoorGoes("Where does the " + a.label.toLowerCase() + "'s door go?");
+}
+
+function showAddonPicker() {
+  let picker = document.getElementById("addonPicker");
+  if (!picker.children.length) {
+    for (let [name, a] of Object.entries(ADDONS)) {
+      let b = document.createElement("button");
+      b.dataset.addon = name;
+      b.title = a.label;
+      let img = document.createElement("img");
+      img.src = addonUrl(name);
+      img.alt = "";
+      let cap = document.createElement("span");
+      cap.textContent = a.label;
+      b.append(img, cap);
+      b.onclick = () => {
+        addonName = name;
+        for (let x of picker.children) x.classList.toggle("on", x == b);
+      };
+      picker.appendChild(b);
+    }
+  }
+  for (let x of picker.children) x.classList.toggle("on", x.dataset.addon == addonName);
+  let r = document.querySelector('[data-tool="addon"]').getBoundingClientRect();
+  picker.style.top = r.top + "px";
+  picker.hidden = false;
+}

@@ -12,6 +12,7 @@ let TOOL_HELP = {
   fill: "Click inside a shape you've drawn to fill it.",
   erase: "Drag over lines to rub them out. Click a door, photo or fill to take it away.",
   door: "Click on a line to put a door there.",
+  addon: "Click on the ground to put the house there. Its door is a portal.",
   portal: "Click a photo or a drawing to make it a portal. Click a portal again to make it plain.",
 };
 
@@ -22,11 +23,13 @@ function setTool(name) {
   placingDoor = name == "door";
   for (let b of document.querySelectorAll("[data-tool]")) b.classList.toggle("on", b.dataset.tool == name);
   document.getElementById("fillPicker").hidden = true;
+  document.getElementById("addonPicker").hidden = true;
   document.body.classList.toggle("erasing", name == "erase");
   document.body.dataset.using = name;
   if (TOOL_HELP[name]) showStatus(TOOL_HELP[name], 5000, "tool-" + name);
   else document.getElementById("status").hidden = true;
   if (name == "fill") showFillPicker();
+  if (name == "addon") showAddonPicker();
 }
 
 function hookTools() {
