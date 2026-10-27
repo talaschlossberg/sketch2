@@ -546,3 +546,7 @@ body[data-using="image"] canvas,
 body[data-using="door"] canvas {
   cursor: crosshair;
 }
+
+.portal-button.on #portalLabel {
+  color: var(--paper);
+}

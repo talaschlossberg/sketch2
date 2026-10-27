@@ -120,6 +120,7 @@ function draw() {
   drawEraserCursor();
   drawSelection();
   drawSelectHover();
+  syncPortalButton();
   showRoomName();
 }
 
@@ -457,6 +458,7 @@ function hookButtons() {
     closeDoorChoice();
     openMap(pendingDoor);
   };
+  document.getElementById("portalButton").onclick = togglePortal;
   document.getElementById("notYet").onclick = () => {
     pendingDoor = null;
     closeDoorChoice();

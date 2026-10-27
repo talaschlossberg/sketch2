@@ -6,7 +6,7 @@ let erasing = false; // dragging the eraser over lines
 let ERASER = 14; // radius
 
 let TOOL_HELP = {
-  select: "Drag anything to move it. Drag the corner square to resize, or press + and -.",
+  select: "Drag anything to move it. Drag the corner square to resize, or press + and -. Portal, in the bar, makes a photo or drawing lead to another page.",
   image: "Drag a box where the photo should go, then choose a photo.",
   path: "Click from point to point. Double-click or press Enter to finish.",
   fill: "Click inside a shape you've drawn to fill it.",
@@ -136,6 +136,7 @@ function likeLine(pts, l, seed = l.seed) {
   seeded(pts, seed);
   if (l.sharp) pts.sharp = true;
   if (l.colour) pts.colour = l.colour;
+  if (l.portal) (pts.portal = true), (pts.to = l.to);
   return pts;
 }
 

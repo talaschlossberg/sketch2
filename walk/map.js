@@ -74,11 +74,12 @@ function makeCard(r) {
   let info = document.createElement("div");
   info.className = "info";
   let kind = WALLS[wallOf(r)].label + " · " + FLOORS[floorOf(r)].label;
-  let doorCount = r.doors.length == 1 ? "1 door" : r.doors.length + " doors";
+  let exits = exitsOf(r).length;
+  let doorCount = exits == 1 ? "1 way out" : exits + " ways out";
   info.textContent = r == room() ? kind + " · " + doorCount + " · she's here" : kind + " · " + doorCount;
   card.appendChild(info);
 
-  let loose = r.doors.filter((d) => !d.to || !roomById(d.to));
+  let loose = exitsOf(r).filter((d) => !d.to || !roomById(d.to));
   if (loose.length && !linkingDoor) {
     let link = document.createElement("button");
     link.className = "small";
@@ -164,7 +165,7 @@ function deleteRoom(r, button) {
   }
   let here = room();
   rooms = rooms.filter((x) => x != r);
-  for (let other of rooms) for (let d of other.doors) if (d.to == r.id) d.to = null;
+  for (let other of rooms) for (let d of exitsOf(other)) if (d.to == r.id) d.to = null;
   roomIndex = rooms.indexOf(here);
   inkDirty = true;
   saveWorld();
@@ -172,7 +173,7 @@ function deleteRoom(r, button) {
 }
 
 function newRoomFromMap(kind) {
-  let home = linkingDoor && rooms.find((x) => x.doors.includes(linkingDoor));
+  let home = linkingDoor && rooms.find((x) => exitsOf(x).includes(linkingDoor));
   let spot = home ? freeMapSpot(home.map.x + 280, home.map.y) : freeMapSpot(40, 160);
   let r = makeRoom(kind, null, spot);
   if (linkingDoor) {
@@ -205,13 +206,13 @@ function drawLinks() {
   };
   let seen = new Set();
   for (let a of rooms) {
-    for (let d of a.doors) {
+    for (let d of exitsOf(a)) {
       let b = roomById(d.to);
       if (!b || b == a) continue;
       let key = [a.id, b.id].sort().join("-");
       if (seen.has(key)) continue;
       seen.add(key);
-      let both = b.doors.some((x) => x.to == a.id);
+      let both = exitsOf(b).some((x) => x.to == a.id);
       let p = centre(a);
       let q = centre(b);
       // bowed, so a link between far-apart rooms arcs over the cards between them
