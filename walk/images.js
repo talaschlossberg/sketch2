@@ -16,6 +16,7 @@ function pictureOf(src) {
     pictures.set(src, img);
     for (let r of rooms) r.ink = null;
     inkDirty = true;
+    worldKey = ""; // a floor photo may have been waiting for it
   }, () => {});
   return null;
 }

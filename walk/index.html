@@ -24,7 +24,8 @@
       <span id="roomName"></span>
       <button id="wallButton" class="world-button" aria-haspopup="true"><span class="cap">Wall</span><span id="wallLabel"></span></button>
       <button id="floorButton" class="world-button" aria-haspopup="true"><span class="cap">Floor</span><span id="floorLabel"></span></button>
-      <button id="changePhoto" hidden>Change photo</button>
+      <button id="changePhoto" hidden>Change wall photo</button>
+      <button id="changeFloorPhoto" hidden>Change floor photo</button>
       <span class="bar-gap"></span>
       <button id="mapButton">Map</button>
       <button id="undo">Undo</button>
@@ -36,6 +37,7 @@
     <div id="hint" hidden>Arrow keys walk. Up jumps, or goes through a door. M opens the map.</div>
     <input id="imageInput" type="file" accept="image/*" hidden>
     <input id="skyPhotoInput" type="file" accept="image/*" hidden>
+    <input id="floorPhotoInput" type="file" accept="image/*" hidden>
     <div id="status" role="status" hidden><span id="statusText"></span><button id="statusClose" aria-label="Close" title="Close">×</button></div>
     <div id="doorChoice" hidden>
       <span id="doorQuestion">Where does this door go?</span>

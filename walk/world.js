@@ -23,6 +23,7 @@ let FLOORS = {
   boards: { label: "Boards", far: [190, 160, 120], near: [214, 188, 150] },
   tiles: { label: "Tiles", far: [214, 210, 198], near: [238, 234, 224] },
   concrete: { label: "Concrete", far: [160, 157, 151], near: [188, 185, 179], flecks: [[130, 127, 122], [210, 207, 200], [110, 108, 104]] },
+  photo: { label: "Your photo" },
   clay: { label: "Clay", far: [176, 92, 56], near: [206, 120, 80], flecks: [[150, 74, 44], [226, 150, 110], [130, 62, 36]] },
 };
 
@@ -80,7 +81,8 @@ function paintWall(g, wall) {
 }
 
 // rows of the floor in perspective: depth 0 at the horizon, 1 at the bottom edge
-function paintFloor(g, kind, hz) {
+function paintFloor(g, kind, hz, pic) {
+  if (kind == "photo") return paintPhotoFloor(g, hz, pic);
   let F = FLOORS[kind];
   if (!F.far) return;
   let h = g.height - hz;
@@ -150,21 +152,55 @@ function paintFloor(g, kind, hz) {
   randomSeed(millis());
 }
 
-function paintWorldInto(g, wall, floor) {
+// your photo as the ground: cropped to fill the floor, and squeezed toward the
+// horizon so the far part of the photo reads as further away
+function paintPhotoFloor(g, hz, pic) {
+  let h = g.height - hz;
+  if (!pic) {
+    g.noStroke();
+    g.fill(196, 190, 178);
+    g.rect(0, hz, g.width, h);
+    g.fill(120);
+    g.textAlign(CENTER, CENTER);
+    g.textSize(min(14, h / 3));
+    g.text("+", g.width / 2, hz + h / 2);
+    return;
+  }
+  let k = max(g.width / pic.width, h / pic.height);
+  let sw = g.width / k;
+  let sh = h / k;
+  let sx = (pic.width - sw) / 2;
+  let sy = (pic.height - sh) / 2;
+  let ctx = g.drawingContext;
+  let src = pic.canvas || pic.elt;
+  let step = 2;
+  for (let y = 0; y < h; y += step) {
+    let v0 = pow(y / h, 0.6);
+    let v1 = pow(min(h, y + step) / h, 0.6);
+    ctx.drawImage(src, sx, sy + v0 * sh, sw, max(0.5, (v1 - v0) * sh), 0, hz + y, g.width, step + 0.5);
+  }
+}
+
+function paintWorldInto(g, wall, floor, floorPic) {
   g.clear();
   g.strokeWeight(1);
   paintWall(g, wall);
-  paintFloor(g, floor, horizonFor(floor, g.height));
+  paintFloor(g, floor, horizonFor(floor, g.height), floorPic);
+}
+
+function floorPicture(r = room()) {
+  return pictureOf(r.floorPhoto);
 }
 
 function drawWorld() {
   let wall = wallOf();
   let floor = floorOf();
-  let key = [wall, floor, width, height, ownPhotoSrc, !!photoForSky()].join("|");
+  let floorPic = floor == "photo" ? floorPicture() : null;
+  let key = [wall, floor, width, height, ownPhotoSrc, !!photoForSky(), room().floorPhoto && room().floorPhoto.length, !!floorPic].join("|");
   if (!worldLayer || worldKey != key) {
     if (!worldLayer || worldLayer.width != width || worldLayer.height != height) worldLayer = createGraphics(width, height);
     if (!grain || grain.width != width || grain.height != height) grain = makeGrain(width, height);
-    paintWorldInto(worldLayer, wall, floor);
+    paintWorldInto(worldLayer, wall, floor, floorPic);
     worldKey = key;
   }
   image(worldLayer, 0, 0, width, height);
@@ -218,6 +254,8 @@ function chooseWall(name) {
 
 function chooseFloor(name) {
   let r = room();
+  // the first time, your photo floor needs a photo
+  if (name == "photo" && !r.floorPhoto) return document.getElementById("floorPhotoInput").click();
   let wasOnFloor = guy.onGround && abs(guy.y - floorY()) < 1;
   r.floor = name;
   settle(r);
@@ -236,6 +274,7 @@ function markWorld() {
   for (let b of document.querySelectorAll("#wallPicker [data-wall]")) b.classList.toggle("on", b.dataset.wall == wall);
   for (let b of document.querySelectorAll("#floorPicker [data-floor]")) b.classList.toggle("on", b.dataset.floor == floor);
   document.getElementById("changePhoto").hidden = wall != "photo";
+  document.getElementById("changeFloorPhoto").hidden = floor != "photo";
   document.body.dataset.wall = wall;
 }
 
@@ -244,7 +283,7 @@ function paintPreviews() {
   let make = (cv, wall, floor) => {
     let g = createGraphics(120, 76);
     g.pixelDensity(1);
-    paintWorldInto(g, wall, floor);
+    paintWorldInto(g, wall, floor, floorPicture());
     if (wall == "room") {
       g.noStroke();
       g.fill(160, 190, 215);
@@ -298,6 +337,12 @@ function hookWorld() {
   document.addEventListener("pointerdown", (e) => {
     if (!e.target.closest("#wallPicker, #floorPicker, #wallButton, #floorButton")) walls.hidden = floors.hidden = true;
   });
+  let floorInput = document.getElementById("floorPhotoInput");
+  document.getElementById("changeFloorPhoto").onclick = () => floorInput.click();
+  floorInput.onchange = () => {
+    if (floorInput.files[0]) setFloorPhoto(floorInput.files[0]);
+    floorInput.value = "";
+  };
   let input = document.getElementById("skyPhotoInput");
   document.getElementById("changePhoto").onclick = () => input.click();
   input.onchange = () => {
@@ -305,4 +350,17 @@ function hookWorld() {
     input.value = "";
   };
   markWorld();
+}
+
+// a photo of your own for this page's floor, kept with the world
+function setFloorPhoto(file) {
+  fileToImage(file).then((el) => {
+    let c = document.createElement("canvas");
+    let k = min(1, 1800 / max(el.naturalWidth, el.naturalHeight));
+    c.width = round(el.naturalWidth * k);
+    c.height = round(el.naturalHeight * k);
+    c.getContext("2d").drawImage(el, 0, 0, c.width, c.height);
+    room().floorPhoto = c.toDataURL("image/jpeg", 0.86);
+    chooseFloor("photo");
+  }, () => showStatus("Couldn't open that picture. Try a JPG or PNG.", 4000));
 }

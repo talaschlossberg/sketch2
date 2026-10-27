@@ -424,7 +424,7 @@ function saveWorld() {
       at: room().id,
       count: roomCount,
       rooms: rooms.map((r) => ({
-        id: r.id, name: r.name, kind: r.kind, wall: r.wall, floor: r.floor, skyPhoto: r.skyPhoto, map: r.map, thumb: r.thumb, doors: r.doors,
+        id: r.id, name: r.name, kind: r.kind, wall: r.wall, floor: r.floor, skyPhoto: r.skyPhoto, floorPhoto: r.floorPhoto, map: r.map, thumb: r.thumb, doors: r.doors,
         images: r.images.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art })),
         fills: r.fills.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, colour: f.colour })),
         lines: r.lines.map((l) => ({ seed: l.seed, colour: l.colour, sharp: l.sharp, pts: l.map((p) => [round(p.x), round(p.y)]) })),
