@@ -1,7 +1,7 @@
 // World: every page is a wall and a floor. The wall is a painted sky, your own
 // photo, plaster, or the furnished room; the floor is grass, sand, boards,
 // tiles, concrete, clay, or just the drawn line. Floors are painted in
-// perspective down from a horizon, and she walks a little below it, with a
+// perspective down from a horizon, and she walks near the bottom of it, with a
 // soft shadow on the ground. Used by sketch.js.
 
 let WALLS = {
@@ -49,8 +49,9 @@ function horizonFor(floor, h) {
   return floor == "line" ? h - FLOOR_GAP : round(h * 0.6);
 }
 
+// on a painted floor she walks near the bottom edge, the floor stretching away behind her
 function groundFor(floor, h) {
-  return floor == "line" ? h - FLOOR_GAP : round(h * 0.7);
+  return floor == "line" ? h - FLOOR_GAP : round(h - max(FLOOR_GAP, h * 0.07));
 }
 
 function groundOf(r) {
