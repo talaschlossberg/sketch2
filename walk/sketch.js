@@ -1,12 +1,12 @@
-// Walk: draw lines, then walk the little guy along them with the arrow keys.
-// She starts with walk/frames/walk01.png ... walk22.png (from walk_cycle.mov), facing right.
-// Choose folder (or drop a folder on the page) swaps in any other sequence;
-// frames.js cleans the frames up and works out how far each one travels.
+// Walk: draw lines, then walk her along them with the arrow keys.
+// Her frames are walk/frames/walk01.png ... walk22.png, from walk_cycle.mov, facing right;
+// frames.js works out how far each one travels.
 
-let BUILT_IN_FRAMES = 22;
+let FRAME_COUNT = 22;
+let MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace'; // as in PMT
 
 let walker = null; // what prepareFrames returns
-let drawnFacing = 1; // which way the frames are drawn: -1 left, 1 right
+let drawnFacing = 1; // her frames face right
 let framesFailed = false;
 
 let lines = []; // the lines drawn in the room she's in: lists of {x, y} points, plus a seed for its wobble
@@ -35,50 +35,14 @@ let upTapped = false; // a quick tap of up can fall between two frames, so it's 
 
 // p5's loadImage fetches the file first, which some hosts block,
 // so frames are loaded as plain images and copied into p5 images
-// the walkers that come with the page; a folder of your own can be loaded too
-let WALKERS = {
-  film: { label: "Her (film)", frames: 22, facing: 1, url: (n) => frameUrl(n) },
-  drawn: { label: "Him (drawing)", frames: 5, facing: -1, url: (n) => drawnUrl(n) },
-  herPixel: { label: "Her (pixel)", frames: 22, facing: 1, pixel: true, url: (n) => pixelUrl("her" + String(n).padStart(2, "0")) },
-  himPixel: { label: "Him (pixel)", frames: 5, facing: -1, pixel: true, url: (n) => pixelUrl("him" + n) },
-};
-
-async function loadBuiltInFrames() {
-  let choice = "film";
-  try {
-    choice = localStorage.getItem("walk-walker") || "film";
-  } catch (e) {}
-  if (choice == "folder") {
-    let saved = await rememberedFrames();
-    if (saved && saved.files.length) {
-      drawnFacing = saved.drawnFacing;
-      return useFiles(saved.files.map((f) => Object.assign(f.blob, { label: f.name })), false);
-    }
-    choice = "film";
-  }
-  return useWalker(WALKERS[choice] ? choice : "film");
-}
-
-// p5's loadImage fetches the file first, which some hosts block,
-// so frames are loaded as plain images and copied into p5 images
-async function useWalker(name) {
-  let w = WALKERS[name];
+async function loadFrames() {
   try {
     let els = [];
-    for (let n = 1; n <= w.frames; n++) els.push(await urlToImage(w.url(n)));
-    walker = prepareFrames(els, !!w.pixel);
-    drawnFacing = w.facing;
-    framesFailed = false;
-    rememberWalker(name);
+    for (let n = 1; n <= FRAME_COUNT; n++) els.push(await urlToImage(frameUrl(n)));
+    walker = prepareFrames(els);
   } catch (e) {
     framesFailed = true;
   }
-}
-
-function rememberWalker(name) {
-  try {
-    localStorage.setItem("walk-walker", name);
-  } catch (e) {}
 }
 
 function urlToImage(url) {
@@ -90,39 +54,10 @@ function urlToImage(url) {
   });
 }
 
-function pixelUrl(name) {
-  return "pixel/" + name + ".png";
-}
-
-function drawnUrl(n) {
-  return "drawn/walk" + n + ".png";
-}
-
 function frameUrl(n) {
   return "frames/walk" + String(n).padStart(2, "0") + ".png";
 }
 
-async function useFiles(files, remember) {
-  files = sortByName(files.filter((f) => isImageFile({ name: f.label || f.name })));
-  if (files.length == 0) {
-    showStatus("No pictures in there. Pick a folder of PNG or JPG frames.");
-    return;
-  }
-  showStatus("Loading " + files.length + " frames…");
-  try {
-    let els = [];
-    for (let f of files) els.push(await fileToImage(f));
-    walker = prepareFrames(els);
-    framesFailed = false;
-    showStatus(files.length + " frames loaded.", 4000);
-    if (remember) {
-      rememberFrames(files, drawnFacing);
-      rememberWalker("folder");
-    }
-  } catch (e) {
-    showStatus("Couldn't open those pictures. Try PNG or JPG files.");
-  }
-}
 
 // a message along the bottom; tips (with a key) closed with the × don't come back
 function showStatus(text, ms, key) {
@@ -154,19 +89,16 @@ function closeStatus() {
 
 function setup() {
   createCanvas(worldWidth(), worldHeight());
-  loadBuiltInFrames();
+  loadFrames();
   loadWorld();
   guy.y = floorY();
   hookButtons();
   hookMap();
   loadSky();
   loadDoorPhoto();
-  loadThings();
-  hookThings();
-  hookArt();
+  hookImages();
+  hookFill();
   hookMake();
-  hookTV();
-  hookWatch();
   hookTools();
   hookSkyButtons();
 }
@@ -177,20 +109,17 @@ function draw() {
 
   if (inkDirty) drawInk();
   image(room().ink, 0, 0, width, height);
-  drawTVs();
 
   drawDoorHint();
-  if (!trip && !mapOpen && !editingFrame && !cut && !watching && !typing()) moveGuy();
-  drawFrameDraft();
+  if (!trip && !mapOpen && !typing()) moveGuy();
+  drawImageDraft();
   drawDrafts();
   drawOpening();
   drawGuy();
-  drawTVHint();
   drawTrip();
   drawEraserCursor();
   drawSelection();
   drawSelectHover();
-  drawWatch();
   showRoomName();
 }
 
@@ -199,7 +128,7 @@ function showRoomName() {
   if (el.textContent != room().name) el.textContent = room().name;
 }
 
-// typing words, a name, or anything else: the arrow keys belong to the text
+// typing a room's name on the map: the arrow keys belong to the text
 function typing() {
   let a = document.activeElement;
   return a && (a.isContentEditable || a.tagName == "INPUT" || a.tagName == "TEXTAREA");
@@ -219,8 +148,6 @@ function moveGuy() {
   if (up && guy.onGround) {
     let door = doorNear();
     if (door) return goThrough(door);
-    let tv = tvNear();
-    if (tv) return openWatch(tv);
     guy.vy = -JUMP;
     guy.onGround = false;
   }
@@ -321,9 +248,7 @@ function drawGuy() {
     if (guy.stride == 0) i = walker.standing;
     if (!guy.onGround) i = walker.jumping;
     let w = (crop.w * GUY_HEIGHT) / crop.h;
-    drawingContext.imageSmoothingEnabled = !walker.pixel;
     image(imgs[i], -w / 2, -GUY_HEIGHT, w, GUY_HEIGHT, crop.x, crop.y, crop.w, crop.h);
-    drawingContext.imageSmoothingEnabled = true;
   }
   pop();
 }
@@ -360,39 +285,30 @@ function floorLine() {
   return l;
 }
 
-// clears the lines here; doors and things stay, so the rooms stay linked (Undo takes them away)
+// clears the lines and fills here; doors and photos stay, so the rooms stay linked (Undo brings it all back)
 function resetLines() {
+  pushUndo();
   lines.length = 0;
-  room().history = room().history.filter((h) => h != "line");
+  room().fills = [];
   inkDirty = true;
   saveWorld();
 }
 
 function mousePressed(e) {
-  if (e && e.target && e.target != drawingContext.canvas) return; // buttons, the map, the art editor
+  if (e && e.target && e.target != drawingContext.canvas) return; // buttons and the map
+  document.getElementById("fillPicker").hidden = true;
+  // a photo still waiting for its picture: click it to choose one
+  let empty = imageAt(mouseX, mouseY);
+  if (empty && !empty.art && tool != "erase" && tool != "select") return choosePhotoFor(empty);
   if (placingDoor) return placeDoor(mouseX, mouseY);
-  if (placingThing) return placeThing(mouseX, mouseY);
-  if (placingFrame) return startFrame(mouseX, mouseY);
+  if (tool == "image") return startImage(mouseX, mouseY);
   if (tool == "erase") return eraseStart(mouseX, mouseY);
   if (tool == "select") return startMove(mouseX, mouseY);
   if (tool == "path") return pathClick(mouseX, mouseY);
-  if (tool == "shapes") {
-    document.getElementById("shapePicker").hidden = true;
-    shapeDraft = { x0: mouseX, y0: mouseY, x1: mouseX, y1: mouseY };
-    return;
-  }
-  if (tool == "text") {
-    let t = textAt(mouseX, mouseY);
-    return writeText(t ? t.x : mouseX, t ? t.y : mouseY, t);
-  }
-  if (tool != "draw") return; // scissors and things wait for their own panels
-  let tv = tvAt(mouseX, mouseY);
-  if (tv) return openTuner(tv);
-  let f = frameAt(mouseX, mouseY);
-  if (f) return openArtEditor(f);
+  if (tool == "fill") return fillAt(mouseX, mouseY);
+  if (tool != "draw") return;
   drawing = [{ x: mouseX, y: mouseY }];
   drawing.seed = random(1000);
-  if (penColour) drawing.colour = penColour;
   lines.push(drawing);
   room().history.push("line");
 }
@@ -406,18 +322,13 @@ function mouseDragged() {
     moveItemTo(mouseX, mouseY);
     return false;
   }
-  if (shapeDraft) {
-    shapeDraft.x1 = mouseX;
-    shapeDraft.y1 = mouseY;
-    return false;
-  }
   if (erasing) {
     eraseAt(mouseX, mouseY);
     return false;
   }
-  if (frameDraft) {
-    frameDraft.x1 = mouseX;
-    frameDraft.y1 = mouseY;
+  if (imageDraft) {
+    imageDraft.x1 = mouseX;
+    imageDraft.y1 = mouseY;
     return false;
   }
   if (!drawing) return;
@@ -432,9 +343,8 @@ function mouseDragged() {
 function mouseReleased() {
   if (scaling) return endScale();
   if (moving) return endMove();
-  if (shapeDraft) return finishShape();
   if (erasing) return eraseEnd();
-  if (frameDraft) return tool == "image" ? finishImage() : finishFrame();
+  if (imageDraft) return finishImage();
   if (drawing && drawing.length < 2) {
     lines.pop();
     room().history.pop();
@@ -452,17 +362,16 @@ function drawInk() {
   ink.clear();
   ink.noStroke();
   ink.fill(inkHere());
-  let fixed = roomDrawing();
-  for (let f of room().frames) inkFrame(ink, f);
+  for (let f of r.fills) inkFill(ink, f);
+  for (let f of r.images) inkImage(ink, f);
+  ink.noStroke();
   ink.fill(inkHere());
-  for (let l of [...solidLines(), ...fixed]) inkLine(ink, l);
+  for (let l of [...solidLines(), ...roomDrawing()]) inkLine(ink, l);
   for (let l of lines) {
-    ink.fill(lineColour(l));
+    ink.fill(l.colour || inkHere()); // lines drawn in colour in older worlds keep it
     inkLine(ink, l);
   }
-  for (let t of room().things) inkThing(ink, t);
   for (let d of doorsHere()) inkDoor(ink, d);
-  for (let t of room().texts) if (!t.hidden) inkText(ink, t);
   inkDirty = false;
 }
 
@@ -517,7 +426,7 @@ function keyPressed() {
     return false; // don't scroll the page
   }
   if ((key == "z" || key == "Z") && (keyIsDown(CONTROL) || keyIsDown(91))) undo();
-  if ((key == "m" || key == "M") && !document.activeElement.isContentEditable && !editingFrame) toggleMap();
+  if (key == "m" || key == "M") toggleMap();
 }
 
 function undo() {
@@ -526,8 +435,6 @@ function undo() {
   if (last && last.snapshot) restoreSnapshot(last.snapshot);
   if (last == "line") lines.pop();
   if (last == "door") room().doors.pop();
-  if (last == "thing") room().things.pop();
-  if (last == "frame") room().frames.pop();
   inkDirty = true;
   saveWorld();
 }
@@ -554,39 +461,6 @@ function hookButtons() {
     closeDoorChoice();
   };
 
-  let picker = document.getElementById("folder");
-  if (!("webkitdirectory" in picker)) picker.removeAttribute("webkitdirectory"); // phones: pick the files instead
-  let choice = document.getElementById("walkerChoice");
-  document.getElementById("choose").onclick = () => (choice.hidden = !choice.hidden);
-  for (let b of choice.querySelectorAll("[data-walker]")) {
-    b.onclick = () => {
-      choice.hidden = true;
-      useWalker(b.dataset.walker);
-    };
-  }
-  document.getElementById("walkerFolder").onclick = () => {
-    choice.hidden = true;
-    picker.click();
-  };
-  document.getElementById("walkerCancel").onclick = () => (choice.hidden = true);
-  picker.onchange = () => {
-    useFiles([...picker.files], true);
-    picker.value = "";
-  };
-
-
-  document.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    document.body.classList.add("dropping");
-  });
-  document.addEventListener("dragleave", (e) => {
-    if (!e.relatedTarget) document.body.classList.remove("dropping");
-  });
-  document.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    document.body.classList.remove("dropping");
-    useFiles(await droppedFiles(e.dataTransfer), true);
-  });
   for (let b of document.querySelectorAll("#pad button")) {
     let k = b.dataset.key;
     let down = (e) => { e.preventDefault(); held[k] = true; b.classList.add("on"); };

@@ -1,16 +1,19 @@
-// Sky: backdrops to pick from. Photo is a film photo; sunset, day and night
-// are painted here, with film grain so they sit alongside it.
+// Sky: backdrops to pick from. Your photo is a photo of your own for each outside
+// (a film sunset until you choose one); sunset, day and night are painted here,
+// with film grain so they sit alongside it.
 // Used by sketch.js.
 
 let SKIES = {
-  photo: { label: "Photo", ink: 17 },
+  photo: { label: "Your photo", ink: 17 },
   sunset: { label: "Sunset", ink: 17 },
   day: { label: "Day", ink: 17 },
   night: { label: "Night", ink: 240 },
 };
 
 let skyName = "sunset";
-let skyPhoto = null; // the sunset photo, once it has loaded
+let skyPhoto = null; // the film sunset, shown until you choose a photo of your own
+let ownPhotos = {}; // your photos, loaded: picture data -> p5 image
+let ownPhotoSrc = null; // the photo of your own the sky shows now, if any
 let skyLayer = null; // the sky drawn at the window's size, redrawn only on resize or change
 let cloudLayer = null; // day clouds, drawn wide enough to drift and wrap
 let grain = null;
@@ -50,10 +53,46 @@ function chooseSky(name) {
 }
 
 function markSkyButtons() {
-  for (let b of document.querySelectorAll("#skies button")) {
+  for (let b of document.querySelectorAll("#skies [data-sky]")) {
     b.classList.toggle("on", b.dataset.sky == skyName);
   }
   document.body.dataset.sky = skyName;
+  // the photo can be changed while it's showing, outside
+  let change = document.getElementById("changePhoto");
+  if (change) change.hidden = !(skyName == "photo" && rooms.length && isOutside());
+}
+
+// the sky shows this outside's own photo, or the film sunset if it has none
+function useOwnPhoto(src) {
+  ownPhotoSrc = src || null;
+  skyLayer = null;
+  if (src && !ownPhotos[src]) {
+    urlToImage(src).then((el) => {
+      let img = createImage(el.naturalWidth, el.naturalHeight);
+      img.drawingContext.drawImage(el, 0, 0);
+      ownPhotos[src] = img;
+      skyLayer = null;
+    }, () => {});
+  }
+}
+
+function photoForSky() {
+  return (ownPhotoSrc && ownPhotos[ownPhotoSrc]) || skyPhoto;
+}
+
+// a photo of your own for this outside's sky, kept with the world
+function setOwnPhoto(file) {
+  fileToImage(file).then((el) => {
+    let c = document.createElement("canvas");
+    let k = min(1, 1800 / max(el.naturalWidth, el.naturalHeight));
+    c.width = round(el.naturalWidth * k);
+    c.height = round(el.naturalHeight * k);
+    c.getContext("2d").drawImage(el, 0, 0, c.width, c.height);
+    let src = c.toDataURL("image/jpeg", 0.86);
+    room().skyPhoto = src;
+    useOwnPhoto(src);
+    chooseSky("photo");
+  }, () => showStatus("Couldn't open that picture. Try a JPG or PNG.", 4000));
 }
 
 function inkColour() {
@@ -80,7 +119,7 @@ function paintSky() {
   let g = skyLayer;
   if (skyName == "photo") {
     g.background(120, 140, 170);
-    if (skyPhoto) coverImage(g, skyPhoto);
+    if (photoForSky()) coverImage(g, photoForSky());
   } else if (skyName == "sunset") {
     gradient(g, color(46, 58, 108), color(250, 176, 136), color(168, 128, 166));
     cloudLayer = makeClouds(width, height, sunsetCloud);
@@ -193,7 +232,13 @@ function makeGrain(w, h) {
 }
 
 function hookSkyButtons() {
-  for (let b of document.querySelectorAll("#skies button")) {
+  let input = document.getElementById("skyPhotoInput");
+  document.getElementById("changePhoto").onclick = () => input.click();
+  input.onchange = () => {
+    if (input.files[0]) setOwnPhoto(input.files[0]);
+    input.value = "";
+  };
+  for (let b of document.querySelectorAll("#skies [data-sky]")) {
     b.onclick = () => chooseSky(b.dataset.sky);
   }
 }

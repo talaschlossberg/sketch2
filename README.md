@@ -3,7 +3,7 @@
 Small p5.js / web experiments.
 
 - **`index.html`** — the original "Two Toes Creative" generative collage sketch.
-- **`walk/`** — **Walk**: draw lines and walk a hand-drawn character along them with the arrow keys.
+- **`walk/`** — **Walk**: draw lines and walk a filmed character along them, through doors into rooms you build.
 - **`coloring/`** — **Snap & Color**: take a photo, turn it into a coloring-book outline, and tap the spaces to fill them. Every color plays its own note.
 
 ## Snap & Color
@@ -27,18 +27,22 @@ Everything is plain HTML/CSS/JS with no build step.
 
 ## Walk
 
-The controls follow the idea lab: a rail of tool symbols down the left and a bar across the top (the place's name, the skies, **Map**, **Walker** (her on film, him drawn, pixel versions of both, or a folder of your own frames), **Undo**, **Clear board**, and **?** for the keys), in a handwritten face. The tools: **Select** (drag lines, doors, things, frames, pictures or words to move them; drag the corner square of what you picked, press + and -, or scroll over it to resize it, with doors and things growing up from where they stand), **Text** (click and type; click words to change them), **Image** (drag a box and choose a photo; no frame), **Frame** (a frame for art you draw), **Shapes** (rectangle, circle, triangle, straight line, all walkable), **Pencil**, **Path** (click point to point; double-click or Enter to finish), **Eraser** (rubs out the parts of lines it passes over; click anything else to take it away), **Scissors** (choose a photo, draw a loop round part of it, name it, and it becomes a thing you can place, with a top she can stand on), **Door**, **Thing**, and the pen **Colour** (`walk/tools.js`, `walk/make.js`).
+Open `walk/index.html` on a web server. She walks on the lines you draw: the arrow keys walk, up jumps or goes through a door, and M opens the map. On a phone, arrows appear on screen.
 
-Open `walk/index.html` on a web server. Pick a sky at the top left: **Photo** (a film photo, `walk/sky/sunset.jpg`), **Sunset** (pink-lit clouds), **Day** (drifting clouds) or **Night** (stars, with the lines drawn in white). The painted skies live in `walk/sky.js`, with film grain to sit alongside the photo; the choice is remembered in that browser.
+**Tools** (the rail down the left):
 
-**Add door**, then click on a line, puts a door there and asks where it goes: a new room (furnished, drawn in the same pen, with a window onto the sky, a picture of the outside, a lamp, a table and chair she can jump onto, and a plant), a new empty room to draw in, a new outside, or a room you pick on the map. A new place comes with a door leading back. Doors are a real door cut from a film photo and straightened (`walk/doors/door.jpg`); going through, its panel swings open onto a dark doorway. Walk up to a door and press up to go through.
+- **Select**: drag a line, door or photo to move it; drag the corner square, press + and -, or scroll over it to resize. Doors settle onto the line below.
+- **Pencil**: draw lines, in pen with a slight wobble.
+- **Path**: click point to point for straight lines; double-click or press Enter to finish.
+- **Fill**: click inside a shape you've drawn to fill it with one of nine colours, like gouache under the ink. Lines, the floor, doors and photos all count as edges; a space that isn't closed in can't be filled. Filling a filled shape changes its colour.
+- **Eraser**: drag over lines to rub out just the parts you touch; click a door, photo or fill to take it away.
+- **Photo**: drag a box and choose a photo; it keeps its shape inside the box.
+- **Door**: click on a line to put up a real door (cut from a film photo, `walk/doors/door.jpg`), then choose where it goes: a new furnished room, a new empty room, a new outside, or a place picked on the map. New places come with a door back.
 
-**Add thing** puts down a real object cut from a film photo (`walk/things/`, set up in `walk/things.js`): for now a 1950s oven. Pick it, click on a line, and it stands there; she walks past it or jumps onto the cooktop and the top of the back panel.
+**The bar** across the top: the place's name; the skies (**Your photo**, a photo of your own for each outside, with **Change photo**, a film sunset until you choose one; and painted **Sunset**, **Day** and **Night**, with the lines drawn in white at night); **Map** (every place as a card with a snapshot and its links; drag, rename, visit, link loose doors, add or delete places); **Undo**; **Clear** (lines and fills; doors and photos stay); and **?** for the keys.
 
-**Add frame**: drag on the wall to put up a frame, then make its art: draw with pens in seven colours and four sizes, erase, or add a photo (it fills the frame and you can draw over it). Click a frame later to change its art or delete it (`walk/art.js`).
+The walker is `walk/frames/walk01.png` to `walk22.png`, from a filmed walk cycle; `walk/frames/make_frames.py` makes them (the loop's head jolt taken out, detail brought out in her dark clothes). The frames advance with the distance she covers, so her feet don't slide, and she leans to sit flat on slopes.
 
-A **TV** is in the Thing list: a set drawn in pen that she can stand on. Click it with the pencil to change channel: static, a test card, her walking, the sky, or a video of your own (with sound if you turn it on). Walk her up to a TV and press up to watch: the programme opens big in a popup, your video with sound and its own controls, with the channels below it; Esc or × closes it. It keeps its channel and video (`walk/tv.js`).
+Everything is saved in the browser (IndexedDB). Type and colour follow PMT and Tala Games: monospace on paper, small spaced capitals, red for what's live.
 
-**Map** (or M) shows every place as a card with a snapshot, and a line with a little door for each link (dashed when the door only goes one way). Drag cards to arrange them, click one to go there, click a name to rename it, link loose doors, make new places, or delete one (press its × twice). Each place keeps its own lines and doors, each outside keeps its own sky, and Undo and Clear work on the place she's in (Clear leaves doors so links survive; Undo takes them away). The whole world, art included, is saved in that browser's IndexedDB (`walk/rooms.js`, `walk/map.js`). Drag to draw lines; the left and right arrow keys walk him along them and up jumps (on a phone, use the on-screen arrows). He climbs gentle slopes, stops at steep ones, falls off the ends and drops back in from the top if he leaves the screen. **Undo** removes the last line, **Clear** removes them all.
-
-The built-in walker is `walk/frames/walk01.png` to `walk22.png`, taken from a filmed walk cycle (`walk_cycle.mov`, 22 frames on a transparent background). The hand-drawn walker's frames are kept in `walk/drawn/`. To use another sequence, press **Choose folder** (or drop a folder anywhere on the page): the frames are sorted by filename and the frame speed is worked out from how far the feet move so they don't slide. Line drawings are also cleaned up: a white background is made see-through and the inside of the outline is filled so lines behind are hidden. Photos and video frames are used as they are. The last folder is remembered in that browser. All of this lives in `walk/frames.js`.
+Code: `sketch.js` (walking, drawing, the loop), `rooms.js` (rooms, doors, saving), `map.js`, `sky.js`, `tools.js` (the rail, the eraser), `make.js` (path, select), `fill.js`, `images.js`, `frames.js` (preparing the walk frames).

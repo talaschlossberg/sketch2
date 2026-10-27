@@ -1,4 +1,4 @@
-// Tools: the panel down the left, which tool is in hand, and the eraser.
+// Tools: the rail down the left, which tool is in hand, and the eraser.
 // Used by sketch.js.
 
 let tool = "draw";
@@ -6,12 +6,11 @@ let erasing = false; // dragging the eraser over lines
 let ERASER = 14; // radius
 
 let TOOL_HELP = {
-  select: "Drag anything to move it. Drag the corner square of what you picked to resize it, or press + and -.",
-  text: "Click where the words should go, then type. Click words to change them.",
-  image: "Drag a box where the picture should go, then choose a photo.",
-  frame: "Drag on the wall to put up a frame for art.",
+  select: "Drag anything to move it. Drag the corner square to resize, or press + and -.",
+  image: "Drag a box where the photo should go, then choose a photo.",
   path: "Click from point to point. Double-click or press Enter to finish.",
-  erase: "Drag over lines to rub them out. Click a door, thing, picture or words to take them away.",
+  fill: "Click inside a shape you've drawn to fill it.",
+  erase: "Drag over lines to rub them out. Click a door, photo or fill to take it away.",
   door: "Click on a line to put a door there.",
 };
 
@@ -20,22 +19,18 @@ function setTool(name) {
   if (pathDraft && name != "path") finishPath();
   tool = name;
   placingDoor = name == "door";
-  placingFrame = name == "frame" || name == "image";
-  if (name != "thing") placingThing = null;
   for (let b of document.querySelectorAll("[data-tool]")) b.classList.toggle("on", b.dataset.tool == name);
-  document.getElementById("thingChoice").hidden = name != "thing" || !!placingThing;
-  document.getElementById("shapePicker").hidden = true;
+  document.getElementById("fillPicker").hidden = true;
   document.body.classList.toggle("erasing", name == "erase");
   document.body.dataset.using = name;
   if (TOOL_HELP[name]) showStatus(TOOL_HELP[name], 5000, "tool-" + name);
-  else if (name != "thing") document.getElementById("status").hidden = true;
-  if (name == "shapes") showShapePicker();
-  if (name == "scissors") openCutEditor();
+  else document.getElementById("status").hidden = true;
+  if (name == "fill") showFillPicker();
 }
 
 function hookTools() {
   for (let b of document.querySelectorAll("[data-tool]")) {
-    b.onclick = () => setTool(tool == b.dataset.tool && !["draw", "shapes"].includes(b.dataset.tool) ? "draw" : b.dataset.tool);
+    b.onclick = () => setTool(tool == b.dataset.tool && !["draw", "fill"].includes(b.dataset.tool) ? "draw" : b.dataset.tool);
   }
   setTool("draw");
 }
@@ -59,12 +54,11 @@ function cssPixels(name) {
 function roomSnapshot() {
   let r = room();
   return {
-    lines: r.lines.map((l) => seeded(l.map((p) => ({ ...p })), l.seed)),
+    lines: r.lines.map((l) => likeLine(l.map((p) => ({ ...p })), l)),
     // copies, so moving or resizing something afterwards can't change what Undo puts back
     doors: r.doors.map((d) => ({ ...d })),
-    things: r.things.map((t) => ({ ...t })),
-    frames: r.frames.map((f) => ({ ...f })),
-    texts: r.texts.map((t) => ({ ...t })),
+    images: r.images.map((f) => ({ ...f })),
+    fills: [...r.fills],
   };
 }
 
@@ -73,27 +67,22 @@ function restoreSnapshot(snap) {
   r.lines.length = 0;
   r.lines.push(...snap.lines);
   r.doors = snap.doors;
-  r.things = snap.things;
-  r.frames = snap.frames;
-  r.texts = snap.texts || [];
+  r.images = snap.images;
+  r.fills = snap.fills;
 }
 
 function eraseStart(x, y) {
   let before = roomSnapshot();
   let r = room();
-  // a door, thing or frame under the eraser goes in one click
+  // a door, photo or fill under the eraser goes in one click
   let door = [...r.doors].reverse().find((d) => abs(x - d.x) < doorSize(d).w / 2 && y < d.y && y > d.y - doorSize(d).h);
-  let thing = [...r.things].reverse().find((t) => {
-    let { w, h } = thingSize(t);
-    return abs(x - t.x) < w / 2 && y < t.y && y > t.y - h;
-  });
-  let frame = frameAt(x, y);
-  let words = textAt(x, y);
-  if (words) r.texts = r.texts.filter((t) => t != words);
-  else if (door) r.doors = r.doors.filter((d) => d != door);
-  else if (thing) r.things = r.things.filter((t) => t != thing);
-  else if (frame) r.frames = r.frames.filter((f) => f != frame);
-  if (words || door || thing || frame) {
+  let image = !door && imageAt(x, y);
+  let nearLine = lines.some((l) => l.some((p, i) => i > 0 && distToSegment(x, y, l[i - 1], p) < ERASER));
+  let paint = !door && !image && !nearLine && fillAtPoint(x, y);
+  if (door) r.doors = r.doors.filter((d) => d != door);
+  else if (image) r.images = r.images.filter((f) => f != image);
+  else if (paint) r.fills = r.fills.filter((f) => f != paint);
+  if (door || image || paint) {
     r.history.push({ snapshot: before });
     inkDirty = true;
     saveWorld();
@@ -125,7 +114,7 @@ function eraseAt(x, y) {
       continue;
     }
     changed = true;
-    pieces.forEach((pc, i) => kept.push(seeded(pc, l.seed + i * 17)));
+    pieces.forEach((pc, i) => kept.push(likeLine(pc, l, l.seed + i * 17)));
   }
   if (!changed) return;
   lines.length = 0;
@@ -142,6 +131,14 @@ function eraseEnd() {
   erasing = false;
 }
 
+// new points with the same look as line l: its wobble, sharp corners and colour
+function likeLine(pts, l, seed = l.seed) {
+  seeded(pts, seed);
+  if (l.sharp) pts.sharp = true;
+  if (l.colour) pts.colour = l.colour;
+  return pts;
+}
+
 // extra points along long segments, so the eraser can cut anywhere
 function densify(l, step) {
   let out = [l[0]];
@@ -156,7 +153,7 @@ function densify(l, step) {
 }
 
 function drawEraserCursor() {
-  if (tool != "erase" || mapOpen || editingFrame) return;
+  if (tool != "erase" || mapOpen) return;
   if (mouseX < 0 || mouseY < 0 || mouseX > width || mouseY > height) return;
   push();
   noFill();

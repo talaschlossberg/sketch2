@@ -26,9 +26,8 @@ function makeRoom(kind, name, mapAt) {
     kind,
     lines: [],
     doors: [],
-    things: [],
-    frames: [],
-    texts: [],
+    images: [], // photos placed in the world: { x, y, w, h, art }
+    fills: [], // colour filled into shapes: { x, y, w, h, art, colour }
     history: [],
     ink: null,
     thumb: null,
@@ -93,7 +92,7 @@ function layout() {
 
 // lines she can stand on that come with the room
 function solidLines() {
-  let out = [floorLine(), ...thingTops()];
+  let out = [floorLine()];
   if (room().kind == "room") {
     let L = layout();
     // furniture stands against the back wall: she walks past it, or jumps up onto it
@@ -335,7 +334,9 @@ function enterRoom(i, fromId) {
   guy.angle = 0;
   guy.stride = 0;
   document.body.dataset.room = isOutside() ? "outside" : "inside";
+  if (isOutside()) useOwnPhoto(room().skyPhoto);
   if (isOutside() && room().sky && room().sky != skyName) chooseSky(room().sky);
+  markSkyButtons();
   saveWorld();
 }
 
@@ -435,12 +436,11 @@ function saveWorld() {
       at: room().id,
       count: roomCount,
       rooms: rooms.map((r) => ({
-        id: r.id, name: r.name, kind: r.kind, sky: r.sky, map: r.map, thumb: r.thumb, doors: r.doors, things: r.things,
-        frames: r.frames.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, seed: f.seed, bare: f.bare })),
-        texts: r.texts,
+        id: r.id, name: r.name, kind: r.kind, sky: r.sky, skyPhoto: r.skyPhoto, map: r.map, thumb: r.thumb, doors: r.doors,
+        images: r.images.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art })),
+        fills: r.fills.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, colour: f.colour })),
         lines: r.lines.map((l) => ({ seed: l.seed, colour: l.colour, sharp: l.sharp, pts: l.map((p) => [round(p.x), round(p.y)]) })),
       })),
-      cutouts,
     };
     try {
       let db = await openStore();
@@ -477,11 +477,11 @@ async function readWorld() {
   }
 }
 
-// doors and things standing on the floor stay on it when the window changes size,
+// doors standing on the floor stay on it when the window changes size,
 // and anything left below the floor or off to the side is brought back within reach
 function settle(r) {
   let f = floorFor(r.kind);
-  for (let d of [...r.doors, ...r.things]) {
+  for (let d of r.doors) {
     if (d.floor || d.y >= f - 2) {
       d.floor = true;
       d.y = f;
@@ -491,25 +491,24 @@ function settle(r) {
 }
 
 function useWorld(world) {
-  rooms = world.rooms.map((r) => ({
+  rooms = world.rooms.map(({ things, frames, texts, ...r }) => ({
     ...r,
-    things: r.things || [],
-    frames: r.frames || [],
-    texts: r.texts || [],
+    // older worlds kept photos and art as frames; anything with a picture carries over as an image
+    images: r.images || (frames || []).filter((f) => f.art).map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art })),
+    fills: r.fills || [],
     history: [],
     ink: null,
     lines: r.lines.map((l) => Object.assign(seeded(l.pts.map(([x, y]) => ({ x, y })), l.seed), l.colour ? { colour: l.colour } : {}, l.sharp ? { sharp: true } : {})),
   }));
-  cutouts = world.cutouts || [];
-  for (let c of cutouts) addCutoutThing(c);
-  fillThingChoices();
   roomCount = world.count || rooms.length;
   roomIndex = max(0, rooms.findIndex((r) => r.id == world.at));
   lines = room().lines;
   for (let r of rooms) settle(r);
   inkDirty = true;
   document.body.dataset.room = isOutside() ? "outside" : "inside";
+  if (isOutside()) useOwnPhoto(room().skyPhoto);
   if (isOutside() && SKIES[room().sky] && room().sky != skyName) chooseSky(room().sky);
+  markSkyButtons();
   guy.y = -GUY_HEIGHT; // drops in from the top
   guy.onGround = false;
 }

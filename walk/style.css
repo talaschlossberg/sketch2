@@ -1,28 +1,88 @@
-html, body {
+/* Type and colour follow PMT (monospace, paper and ink, hairlines, rounded
+   ink buttons) and Tala Games (small spaced-out capitals, red for what's live). */
+:root {
+  --paper: #fcfaf6;
+  --raised: #fffefb;
+  --ink: #1a1916;
+  --muted: #8a877e;
+  --hair: #cfcabd;
+  --red: #c1442a;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --rail: 54px;
+  --bar: 46px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #fff;
-  font-family: -apple-system, Helvetica, Arial, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 canvas {
   display: block;
   touch-action: none;
+  margin-left: var(--rail);
+  margin-top: var(--bar);
 }
 
-/* a narrow rail of tools down the left, a bar of actions across the top,
-   and the world in the rest, as in the idea lab */
-:root {
-  --rail: 52px;
-  --bar: 44px;
-  --panel: var(--rail);
-  --hand: "Comic Neue", "Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif;
+button {
+  font: inherit;
+  font-size: 13px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--raised);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-body {
-  font-family: var(--hand);
+button:hover {
+  border-color: var(--red);
+  color: var(--red);
 }
+
+button.on,
+button:active,
+button.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+/* small spaced-out capitals, as on Tala Games */
+.cap,
+#roomName,
+#mapBar h2 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ---- the rail of tools ---- */
 
 #rail {
   position: fixed;
@@ -30,40 +90,35 @@ body {
   bottom: 0;
   left: 0;
   width: var(--rail);
-  box-sizing: border-box;
-  padding: 6px 5px;
-  background: #fff;
-  border-right: 2px solid #222;
+  padding: 8px 7px;
+  background: var(--paper);
+  border-right: 1px solid var(--hair);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   overflow-y: auto;
   z-index: 5;
 }
 
 #rail hr {
-  width: 100%;
-  margin: 2px 0;
+  width: 70%;
+  margin: 4px 0;
   border: 0;
-  border-top: 1.5px solid #222;
+  border-top: 1px solid var(--hair);
 }
 
-#rail > button,
-#shapePicker button {
-  width: 38px;
-  height: 38px;
+#rail > button {
+  width: 40px;
+  height: 40px;
   padding: 0;
-  border-radius: 3px;
-  border: 1.5px solid #222;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: none;
 }
 
-#rail svg,
-#shapePicker svg {
+#rail svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -73,46 +128,43 @@ body {
   stroke-linejoin: round;
 }
 
-.rail-label {
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-top: 4px;
+#rail svg .drop {
+  fill: var(--fill, var(--red));
+  stroke: none;
 }
 
-#colourChip {
-  width: 28px;
-  height: 14px;
-  border: 1.5px solid #222;
-  background: var(--pen, #1a1714);
-}
-
-#colourButton.on,
-#colourButton:active {
-  background: #fff;
-  outline: 2px solid #222;
-}
-
-#colourPicker,
-#shapePicker {
+#fillPicker {
   position: fixed;
   left: calc(var(--rail) + 6px);
   padding: 8px;
-  background: #fff;
-  border: 2px solid #222;
-  border-radius: 6px;
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
   display: grid;
+  grid-template-columns: repeat(3, 32px);
   gap: 6px;
   z-index: 6;
 }
 
-#colourPicker {
-  grid-template-columns: repeat(4, 30px);
+.swatch {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--hair);
+  background: var(--swatch);
 }
 
-#shapePicker {
-  grid-template-columns: repeat(4, 38px);
+.swatch:hover {
+  border-color: var(--ink);
 }
+
+.swatch.on {
+  background: var(--swatch);
+  box-shadow: 0 0 0 2px var(--raised), 0 0 0 4px var(--ink);
+}
+
+/* ---- the bar across the top ---- */
 
 #bar {
   position: fixed;
@@ -120,10 +172,9 @@ body {
   left: var(--rail);
   right: 0;
   height: var(--bar);
-  box-sizing: border-box;
   padding: 0 10px;
-  background: #efefef;
-  border-bottom: 2px solid #222;
+  background: var(--paper);
+  border-bottom: 1px solid var(--hair);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -132,17 +183,11 @@ body {
 }
 
 #bar button {
-  padding: 4px 10px;
-  font-size: 14px;
-  border-width: 1.5px;
-  border-radius: 4px;
   flex: none;
 }
 
 #roomName {
-  font-weight: 700;
-  font-size: 15px;
-  margin-right: 8px;
+  margin-right: 10px;
   white-space: nowrap;
 }
 
@@ -156,95 +201,42 @@ body {
   min-width: 8px;
 }
 
+#help {
+  width: 32px;
+  padding: 0;
+}
+
 #hint {
   position: fixed;
   top: calc(var(--bar) + 8px);
   right: 10px;
-  max-width: 260px;
+  max-width: 280px;
   padding: 10px 12px;
-  background: #fff;
-  border: 2px solid #222;
-  border-radius: 6px;
-  font-size: 14px;
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  line-height: 1.6;
   z-index: 6;
 }
 
-canvas {
-  margin-left: var(--rail);
-  margin-top: var(--bar);
-}
-
-body.erasing canvas {
-  cursor: none;
-}
-
-body[data-using="text"] canvas {
-  cursor: text;
-}
-
-body[data-using="path"] canvas,
-body[data-using="shapes"] canvas,
-body[data-using="image"] canvas,
-body[data-using="frame"] canvas,
-body[data-using="door"] canvas,
-body[data-using="thing"] canvas {
-  cursor: crosshair;
-}
-
-body[data-using="select"] canvas {
-  cursor: default;
-}
-
-.world-text {
-  position: fixed;
-  z-index: 6;
-  font-family: var(--hand);
-  border: 1.5px dashed #222;
-  background: rgba(255, 255, 255, 0.85);
-  padding: 2px 4px;
-  outline: none;
-}
-
-.cut-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-
-.cut-name input {
-  font: inherit;
-  padding: 5px 8px;
-  border: 1.5px solid #222;
-  border-radius: 4px;
-  width: 140px;
-}
-
-#cutCanvas {
-  align-self: center;
-  border: 2px solid #222;
-  touch-action: none;
-  cursor: crosshair;
-  background: #f4f1ea;
-}
+/* ---- messages and questions ---- */
 
 #status {
   position: fixed;
   z-index: 7;
-  left: calc(50% + var(--panel) / 2);
+  left: calc(50% + var(--rail) / 2);
   top: calc(var(--bar) + 10px);
   transform: translateX(-50%);
   width: max-content;
-  max-width: calc(100% - 32px);
-  padding: 10px 16px;
-  border-radius: 8px;
-  background: #222;
-  color: #fff;
-  font-size: 14px;
+  max-width: calc(100% - var(--rail) - 32px);
+  padding: 8px 8px 8px 14px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--paper);
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-right: 8px;
+  line-height: 1.5;
 }
 
 #statusClose {
@@ -252,105 +244,55 @@ body[data-using="select"] canvas {
   width: 26px;
   height: 26px;
   padding: 0;
-  border: 1.5px solid #fff;
+  border: 1px solid var(--muted);
   border-radius: 50%;
   background: transparent;
-  color: #fff;
-  font-family: Arial, sans-serif;
-  font-size: 19px;
+  color: var(--paper);
+  font-size: 15px;
   line-height: 1;
 }
 
 #statusClose:hover {
-  background: #fff;
-  color: #222;
+  border-color: var(--paper);
+  color: var(--paper);
 }
 
-body.dropping {
-  outline: 6px dashed #222;
-  outline-offset: -12px;
-}
-
-#pad {
-  position: fixed;
-  bottom: 16px;
-  right: 16px;
-  display: flex;
-  gap: 8px;
-}
-
-button {
-  font: inherit;
-  font-family: var(--hand);
-  font-size: 15px;
-  padding: 8px 14px;
-  border: 2px solid #222;
-  border-radius: 8px;
-  background: #fff;
-  color: #222;
-  cursor: pointer;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-#pad button {
-  width: 56px;
-  height: 56px;
-  font-size: 20px;
-}
-
-button:active, button.on {
-  background: #222;
-  color: #fff;
-}
-
-/* the on-screen arrows are for touch screens */
-
-@media (hover: hover) and (pointer: fine) {
-  #pad { display: none; }
-}
-
-[hidden] {
-  display: none !important;
-}
-
-#doorChoice,
-#thingChoice,
-#walkerChoice,
-#tvPanel {
+#doorChoice {
   position: fixed;
   z-index: 7;
-  left: calc(50% + var(--panel) / 2);
+  left: calc(50% + var(--rail) / 2);
   bottom: 24px;
   transform: translateX(-50%);
   width: max-content;
-  max-width: calc(100% - 32px);
-  padding: 12px 14px;
-  border: 2px solid #222;
-  border-radius: 10px;
-  background: #fffdf8;
-  color: #222;
+  max-width: calc(100% - var(--rail) - 32px);
+  padding: 14px;
+  border: 1px solid var(--hair);
+  border-radius: 14px;
+  background: var(--raised);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  font-size: 15px;
 }
 
 .choices {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
+
+/* ---- the map ---- */
 
 #map {
   position: fixed;
   inset: 0;
   z-index: 8;
-  background: #f4efe6;
+  background:
+    linear-gradient(to right, rgba(79, 111, 148, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(79, 111, 148, 0.06) 1px, transparent 1px),
+    var(--paper);
+  background-size: 16px 16px;
   display: flex;
   flex-direction: column;
-  color: #222;
 }
 
 #mapBar {
@@ -358,20 +300,20 @@ button:active, button.on {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
-  padding: 10px 16px;
-  border-bottom: 2px solid #222;
+  padding: 8px 12px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--hair);
 }
 
 #mapBar h2 {
   margin: 0;
-  font-size: 20px;
 }
 
 #mapHint {
   flex: 1;
   min-width: 200px;
-  color: #5b5348;
-  font-size: 14px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 #mapBoard {
@@ -389,24 +331,24 @@ button:active, button.on {
 
 #mapLinks path {
   fill: none;
-  stroke: #222;
-  stroke-width: 2.5;
+  stroke: var(--ink);
+  stroke-width: 1.5;
   stroke-linecap: round;
 }
 
 #mapLinks rect {
-  fill: #fffdf8;
-  stroke: #222;
-  stroke-width: 2;
+  fill: var(--raised);
+  stroke: var(--ink);
+  stroke-width: 1.5;
 }
 
 .card {
   position: absolute;
   width: 200px;
   padding: 8px;
-  border: 2px solid #222;
-  border-radius: 8px;
-  background: #fffdf8;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: var(--raised);
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -418,13 +360,13 @@ button:active, button.on {
 
 .card.dragging {
   cursor: grabbing;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 8px 20px rgba(26, 25, 22, 0.15);
   z-index: 2;
 }
 
 .card.here {
-  outline: 3px solid #e2725b;
-  outline-offset: 3px;
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red);
 }
 
 #mapBoard.linking .card {
@@ -432,251 +374,103 @@ button:active, button.on {
 }
 
 #mapBoard.linking .card:hover {
-  outline: 3px dashed #222;
-  outline-offset: 3px;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
 }
 
 .card .pic {
   height: 118px;
-  border-radius: 4px;
+  border-radius: 8px;
   background-size: cover;
   background-position: center;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  color: #5b5348;
+  color: var(--muted);
+  font-size: 12px;
 }
 
-.card.outside .pic { background-color: #9db6d6; color: #fff; }
+.card.outside .pic { background-color: #c9d6e4; }
 .card.room .pic { background-color: #efe6d6; }
 .card.empty .pic { background-color: #f2ede4; }
 
 .card .name {
-  font-weight: 600;
-  font-size: 15px;
+  font-weight: 700;
   padding: 2px 4px;
   margin: 0 -4px;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: text;
   outline: none;
 }
 
 .card .name:focus {
-  background: #f1eadf;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--hair);
 }
 
 .card .info {
-  font-size: 12px;
-  color: #6b6357;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .card button.small {
-  padding: 4px 8px;
-  font-size: 13px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
   align-self: flex-start;
 }
 
 .card .delete {
   position: absolute;
-  top: -12px;
-  right: -12px;
-  padding: 0 8px;
-  height: 26px;
-  min-width: 26px;
-  border-radius: 13px;
-  font-size: 15px;
+  top: -11px;
+  right: -11px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 7px;
+  border-radius: 12px;
+  font-size: 13px;
   line-height: 1;
 }
 
 .card .delete.confirm {
-  background: #b3402f;
-  border-color: #b3402f;
-  color: #fff;
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--paper);
 }
 
-button:focus-visible,
-.card .name:focus-visible {
-  outline: 3px solid #e2725b;
-  outline-offset: 2px;
-}
+/* ---- the on-screen arrows, for touch screens ---- */
 
-.thing-pick {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 12px;
-}
-
-.thing-pick img {
-  height: 64px;
-  width: auto;
-}
-
-#artEditor,
-#cutEditor {
+#pad {
   position: fixed;
-  inset: 0;
-  background: rgba(30, 26, 22, 0.55);
+  bottom: 16px;
+  right: 16px;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  z-index: 10;
-}
-
-.art-panel {
-  background: #fffdf8;
-  border: 2px solid #222;
-  border-radius: 12px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 100%;
-}
-
-.art-tools,
-.art-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   gap: 8px;
+  z-index: 4;
 }
 
-.art-actions .spacer {
-  flex: 1;
+#pad button {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  font-size: 18px;
 }
 
-#artCanvas {
-  align-self: center;
-  border: 2px solid #222;
-  touch-action: none;
+@media (hover: hover) and (pointer: fine) {
+  #pad {
+    display: none;
+  }
+}
+
+/* ---- cursors for the tools ---- */
+
+body.erasing canvas {
+  cursor: none;
+}
+
+body[data-using="path"] canvas,
+body[data-using="fill"] canvas,
+body[data-using="image"] canvas,
+body[data-using="door"] canvas {
   cursor: crosshair;
-  background: #f7f3ea;
-}
-
-.pens,
-.sizes {
-  display: flex;
-  gap: 6px;
-}
-
-.swatch {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  background: var(--swatch);
-}
-
-.swatch.on {
-  box-shadow: 0 0 0 3px #fffdf8, 0 0 0 5px #222;
-}
-
-.sizes button {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.sizes i {
-  width: var(--dot);
-  height: var(--dot);
-  border-radius: 50%;
-  background: currentColor;
-}
-
-button.on .sizes i,
-.sizes button.on i {
-  background: #fff;
-}
-
-button.primary {
-  background: #222;
-  color: #fff;
-}
-
-#artDelete.confirm {
-  background: #b3402f;
-  border-color: #b3402f;
-  color: #fff;
-}
-
-#watch {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-  background: rgba(20, 18, 16, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-
-/* the big screen sits in a set like the ones in the world */
-.watch-set {
-  width: min(760px, 100%);
-  padding: 14px 18px 16px;
-  background: #fdfaf3;
-  border: 3px solid #222;
-  border-radius: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.watch-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-weight: 700;
-  font-size: 17px;
-}
-
-#watchClose {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  font-family: Arial, sans-serif;
-  font-size: 20px;
-  line-height: 1;
-}
-
-#watchScreen {
-  position: relative;
-  aspect-ratio: 4 / 3;
-  width: min(100%, (100vh - 220px) * 4 / 3);
-  margin: 0 auto;
-  border: 3px solid #222;
-  border-radius: 18px;
-  overflow: hidden;
-  background: #111;
-}
-
-#watchScreen canvas,
-#watchScreen video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  object-fit: cover;
-  background: #111;
-}
-
-.watch-video {
-  justify-content: center;
-}
-
-#watchChannels {
-  justify-content: center;
-}
-
-.pixel-pick img {
-  image-rendering: pixelated;
 }

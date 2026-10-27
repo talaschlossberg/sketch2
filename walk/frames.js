@@ -1,17 +1,16 @@
-// Frames: load a walk sequence from a folder, clean it up, and work out
+// Frames: clean up a walk sequence and work out
 // how far he travels per frame. Used by sketch.js.
 
 let PAPER = [255, 255, 255];
 
 // Turn plain <img> elements into p5 images plus everything drawGuy needs.
-// pixel walkers come ready-made: no clean-up, and drawn with square pixels
-function prepareFrames(els, pixel = false) {
+function prepareFrames(els) {
   let imgs = els.map((el) => {
     let img = createImage(el.naturalWidth, el.naturalHeight);
     img.drawingContext.drawImage(el, 0, 0);
     let data = img.drawingContext.getImageData(0, 0, img.width, img.height);
     // photos and video are used as they are; only line drawings get cleaned up
-    if (!pixel && isLineArt(data)) {
+    if (isLineArt(data)) {
       clearBackground(data);
       fillInside(data);
       img.drawingContext.putImageData(data, 0, 0);
@@ -41,7 +40,6 @@ function prepareFrames(els, pixel = false) {
   if (stepLength < 0.1) stepLength = 0.4; // feet barely move: guess a normal step
 
   return {
-    pixel,
     imgs,
     crop,
     standing: spreads.indexOf(narrowest),
@@ -183,14 +181,6 @@ function feetSpread(img, crop) {
 
 // ---- getting the files ----
 
-function isImageFile(f) {
-  return /\.(png|jpe?g|gif|webp)$/i.test(f.name);
-}
-
-function sortByName(files) {
-  return files.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-}
-
 function fileToImage(blob) {
   return new Promise((done, fail) => {
     let el = new Image();
@@ -200,28 +190,7 @@ function fileToImage(blob) {
   });
 }
 
-// everything dropped: files, folders, folders inside folders
-async function droppedFiles(dataTransfer) {
-  let entries = [...dataTransfer.items].map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
-  if (entries.length == 0) return [...dataTransfer.files];
-  let files = [];
-  async function walk(entry) {
-    if (entry.isFile) {
-      files.push(await new Promise((done, fail) => entry.file(done, fail)));
-    } else if (entry.isDirectory) {
-      let reader = entry.createReader();
-      let batch;
-      do {
-        batch = await new Promise((done, fail) => reader.readEntries(done, fail));
-        for (let e of batch) await walk(e);
-      } while (batch.length);
-    }
-  }
-  for (let e of entries) await walk(e);
-  return files;
-}
-
-// ---- remembering the last folder in this browser ----
+// ---- the browser's store, where the world is kept ----
 
 function openStore() {
   return new Promise((done, fail) => {
@@ -232,25 +201,3 @@ function openStore() {
   });
 }
 
-async function rememberFrames(files, drawnFacing) {
-  try {
-    let db = await openStore();
-    let tx = db.transaction("saved", "readwrite");
-    tx.objectStore("saved").put({ files: files.map((f) => ({ name: f.name, blob: f })), drawnFacing }, "folder");
-  } catch (e) {
-    // private window or storage blocked: it just won't be remembered
-  }
-}
-
-async function rememberedFrames() {
-  try {
-    let db = await openStore();
-    return await new Promise((done) => {
-      let req = db.transaction("saved").objectStore("saved").get("folder");
-      req.onsuccess = () => done(req.result || null);
-      req.onerror = () => done(null);
-    });
-  } catch (e) {
-    return null;
-  }
-}
