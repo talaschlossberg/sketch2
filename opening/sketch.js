@@ -24,7 +24,8 @@ let panning = false; // a slow, steady pan, from when the line nears the far sid
 let finishing = false; // 2 was pressed
 let ROOM_AHEAD = 0.4; // once the line reaches this share of the screen from the right, the pan begins
 let WALK_SPEED = 0.85; // her heights per second
-let PAN_SPEED = 0.4; // also in her heights per second, slower than she walks
+let PAN_SPEED = 0.4; // the slowest the pan goes, in her heights per second
+let PAN_TOP = 2.5; // the fastest
 let LINE_GAP = 0.42; // how far behind the one before the last walker stops, in her heights
 
 // pictures come from files, or from the page itself in the single-file version
@@ -122,12 +123,17 @@ function drawGround() {
   }
 }
 
-// once the line nears the far side, the view starts a slow, steady pan; 2 brings it gently to a stop
+// once the line nears the far side, the view starts a steady pan; 2 brings it gently to a stop.
+// The quicker you press 1, the further right the line ends up, and the pan speeds up to match,
+// so people stand spread out at whatever pace you send them on. It changes speed gradually, never in jerks.
 function panView(h) {
-  if (!panning && !finishing && lineEnd() - camX + h * 0.2 > width * (1 - ROOM_AHEAD)) panning = true;
-  let goal = panning && !finishing ? PAN_SPEED * h : 0;
+  let mark = width * (1 - ROOM_AHEAD) - h * 0.2; // where the end of the line should sit on screen
+  let ahead = lineEnd() - camX - mark;
+  if (!panning && !finishing && ahead > 0) panning = true;
+  let goal = 0;
+  if (panning && !finishing) goal = constrain(PAN_SPEED * h + ahead * 0.9, PAN_SPEED * h, PAN_TOP * h);
   let dt = min(deltaTime, 50) / 1000;
-  camSpeed += (goal - camSpeed) * (1 - exp(-dt * 0.8)); // eases in and out over a couple of seconds
+  camSpeed += (goal - camSpeed) * (1 - exp(-dt * 0.7)); // eases in and out over a couple of seconds
   camX += camSpeed * dt;
 }
 
