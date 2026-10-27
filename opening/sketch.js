@@ -1,5 +1,6 @@
 // Opening: a white screen, the title boiling at the top, and her walking on from the right.
 // Press 1 and she stops where she is and someone new walks on, dressed a little differently.
+// Press 2 and whoever is walking is the last: she stops at the end of the line and no one follows.
 // Uses prepareFrames and feetSpread from ../walk/frames.js.
 
 let FRAME_COUNT = 22;
@@ -15,7 +16,12 @@ let personCount = 0; // how many have walked on since the start
 let hintTimer = null;
 let camX = 0; // how far the view has panned right, following the line
 let camSpeed = 0;
-let ROOM_AHEAD = 0.4; // share of the screen kept empty after the last one standing
+let panning = false; // a slow, steady pan, from when the line nears the far side until 2
+let finishing = false; // 2 was pressed
+let ROOM_AHEAD = 0.4; // once the line reaches this share of the screen from the right, the pan begins
+let WALK_SPEED = 0.85; // her heights per second
+let PAN_SPEED = 0.2; // also in her heights per second, slower than she walks
+let LINE_GAP = 0.42; // how far behind the one before the last walker stops, in her heights
 
 // pictures come from files, or from the page itself in the single-file version
 function pictureUrl(path) {
@@ -112,16 +118,19 @@ function drawGround() {
   }
 }
 
-// once the line reaches the far side, the view glides along so there's always white space after it
+// once the line nears the far side, the view starts a slow, steady pan; 2 brings it gently to a stop
 function panView(h) {
-  let standing = people.filter((p) => p.stopped);
-  let end = standing.length ? max(standing.map((p) => p.x)) : 0;
-  let target = max(0, end + h * 0.2 - width * (1 - ROOM_AHEAD));
-  // a spring that settles without overshooting, so the pan eases in and out
+  if (!panning && !finishing && lineEnd() - camX + h * 0.2 > width * (1 - ROOM_AHEAD)) panning = true;
+  let goal = panning && !finishing ? PAN_SPEED * h : 0;
   let dt = min(deltaTime, 50) / 1000;
-  let w = 2.2;
-  camSpeed += ((target - camX) * w * w - camSpeed * 2 * w) * dt;
+  camSpeed += (goal - camSpeed) * (1 - exp(-dt * 0.8)); // eases in and out over a couple of seconds
   camX += camSpeed * dt;
+}
+
+// where the last one standing (or coming to a stop) is
+function lineEnd(except) {
+  let line = people.filter((p) => p != except && (p.stopped || p.stopping));
+  return line.length ? max(line.map((p) => p.x)) : -Infinity;
 }
 
 // ---- sizes ----
@@ -150,7 +159,11 @@ function drawTitle() {
 function newPerson() {
   if (!walkFrames) return;
   let walking = people.find((p) => !p.stopping && !p.stopped);
-  if (walking) walking.stopping = true;
+  if (walking) {
+    walking.stopping = true;
+    walking.last = false;
+  }
+  finishing = false;
 
   let look = lookFor(personCount);
   people.push({
@@ -166,12 +179,18 @@ function newPerson() {
 
 function movePerson(p, h) {
   if (p.stopped) return;
+  // the last walker stops on her own, a step behind the one before
+  if (p.last && !p.stopping) {
+    let end = lineEnd(p);
+    let spot = end > -Infinity ? end + h * LINE_GAP : camX + width * 0.35; // on her own, she stops left of middle
+    if (p.x <= spot) p.stopping = true;
+  }
   let onScreen = p.x - camX < width - h * 0.3; // pressing 1 twice quickly mustn't leave someone stuck off the edge
   if (p.stopping && onScreen && stopFrames.includes(p.frame)) {
     p.stopped = true;
     return;
   }
-  let step = h * 0.56 * min(deltaTime, 50) / 1000; // as fast as she walks in Walk
+  let step = h * WALK_SPEED * min(deltaTime, 50) / 1000;
   p.x -= step;
   p.stride += step;
   // the frames follow the distance covered, so her feet don't slide
@@ -187,6 +206,12 @@ function drawPerson(p, h) {
   scale(-1, 1); // her frames face right; she walks left
   drawingContext.drawImage(p.imgs[p.frame], crop.x, crop.y, crop.w, crop.h, -w / 2, -h, w, h);
   pop();
+}
+
+function lastPerson() {
+  finishing = true;
+  let walking = people.find((p) => !p.stopping && !p.stopped);
+  if (walking) walking.last = true;
 }
 
 function undoPerson() {
@@ -205,6 +230,8 @@ function startOver() {
   personCount = 0;
   camX = 0;
   camSpeed = 0;
+  panning = false;
+  finishing = false;
   newPerson();
 }
 
@@ -213,6 +240,7 @@ function startOver() {
 function keyPressed() {
   hideHint();
   if (key == "1") newPerson();
+  else if (key == "2") lastPerson();
   else if (keyCode == BACKSPACE || key == "z" || key == "Z") undoPerson();
   else if (key == "r" || key == "R") startOver();
   else if (key == "t" || key == "T") showTitle = !showTitle;
