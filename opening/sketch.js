@@ -24,7 +24,7 @@ let panning = false; // a slow, steady pan, from when the line nears the far sid
 let finishing = false; // 2 was pressed
 let ROOM_AHEAD = 0.4; // once the line reaches this share of the screen from the right, the pan begins
 let WALK_SPEED = 0.85; // her heights per second
-let PAN_SPEED = 0.2; // also in her heights per second, slower than she walks
+let PAN_SPEED = 0.4; // also in her heights per second, slower than she walks
 let LINE_GAP = 0.42; // how far behind the one before the last walker stops, in her heights
 
 // pictures come from files, or from the page itself in the single-file version
