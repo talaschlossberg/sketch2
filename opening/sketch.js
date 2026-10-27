@@ -37,6 +37,7 @@ function numbered(prefix, n) {
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
+  noiseSeed(7); // the same hills and the same pen line every time
 
   let walkEls = [];
   for (let n = 1; n <= FRAME_COUNT; n++) walkEls.push(urlToImage(numbered("../walk/frames/walk", n)));
@@ -65,14 +66,50 @@ function draw() {
   if (showTitle) drawTitle();
 
   let h = personHeight();
-  let ground = groundY();
   for (let p of people) movePerson(p, h);
   people = people.filter((p) => p.x - camX > -h); // walked off the left
   panView(h);
   push();
   translate(-camX, 0);
-  for (let p of people) drawPerson(p, h, ground);
+  drawGround();
+  for (let p of people) drawPerson(p, h);
   pop();
+}
+
+// ---- the ground ----
+
+// flat on the first screen; past it, where the view pans to, the ground starts to roll
+function groundAt(x) {
+  let rough = constrain((x - width) / (width * 0.7), 0, 1);
+  rough = rough * rough * (3 - 2 * rough); // eases in, so there's no kink where the hills begin
+  let hills = (noise(x / 650) - 0.5) * 2 + (noise(500 + x / 190) - 0.5) * 0.5;
+  return groundY() - (hills + 0.35) * height * 0.13 * rough; // more rises than dips, so feet stay on screen
+}
+
+function slopeAt(x) {
+  return (groundAt(x + 8) - groundAt(x - 8)) / 16;
+}
+
+// a pen line along the ground, like the lines drawn in Walk: a slight wobble and a nib that thickens and thins
+function drawGround() {
+  let g = drawingContext;
+  g.strokeStyle = "#1a1916";
+  g.lineCap = "round";
+  let step = 2;
+  let x0 = floor((camX - 20) / step) * step; // steps fixed to the ground, so the line doesn't shimmer as it pans
+  let prev = null;
+  for (let x = x0; x < camX + width + 20; x += step) {
+    let wobble = (noise(900, x * 0.01) - 0.5) * 3 + (noise(940, x * 0.08) - 0.5) * 1.2;
+    let pt = { x, y: groundAt(x) + wobble };
+    if (prev) {
+      g.lineWidth = 2.2 + noise(980, x * 0.02) * 1.3;
+      g.beginPath();
+      g.moveTo(prev.x, prev.y);
+      g.lineTo(pt.x, pt.y);
+      g.stroke();
+    }
+    prev = pt;
+  }
 }
 
 // once the line reaches the far side, the view glides along so there's always white space after it
@@ -141,11 +178,12 @@ function movePerson(p, h) {
   p.frame = floor(p.stride / (walkFrames.stepPerFrame * h)) % FRAME_COUNT;
 }
 
-function drawPerson(p, h, ground) {
+function drawPerson(p, h) {
   let { crop } = walkFrames;
   let w = (crop.w * h) / crop.h;
   push();
-  translate(p.x, ground);
+  translate(p.x, groundAt(p.x) + 1);
+  rotate(atan(slopeAt(p.x)) * 0.6); // leans into the slope, as she does in Walk, but less
   scale(-1, 1); // her frames face right; she walks left
   drawingContext.drawImage(p.imgs[p.frame], crop.x, crop.y, crop.w, crop.h, -w / 2, -h, w, h);
   pop();
