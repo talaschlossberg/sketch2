@@ -1,6 +1,6 @@
 // Opening: a white screen, the title boiling at the top, and her walking on from the right.
 // Press 1 and she stops where she is and someone new walks on, dressed a little differently.
-// Press 2 and whoever is walking is the last: she stops at the end of the line and no one follows.
+// Press 2 and the pan stops, one last person walks on to the end of the line, and a beat later the title comes on.
 // Uses prepareFrames and feetSpread from ../walk/frames.js.
 
 let FRAME_COUNT = 22;
@@ -14,7 +14,11 @@ let TITLES = [
   { path: "title2/title", count: 8, frames: [] },
 ];
 let titleIndex = 0;
-let showTitle = true;
+let showTitle = false; // no title until the end (or T)
+let titleDue = null; // when the title comes on, a beat after the last one stops
+let titleFadeFrom = -Infinity;
+let TITLE_BEAT = 1000; // ms
+let TITLE_FADE = 450; // ms
 let people = []; // everyone on screen, oldest first
 let personCount = 0; // how many have walked on since the start
 let hintTimer = null;
@@ -26,7 +30,7 @@ let ROOM_AHEAD = 0.4; // once the line reaches this share of the screen from the
 let WALK_SPEED = 0.85; // her heights per second
 let PAN_SPEED = 0.4; // the slowest the pan goes, in her heights per second
 let PAN_TOP = 2.5; // the fastest
-let LINE_GAP = 0.42; // how far behind the one before the last walker stops, in her heights
+let LINE_GAP = 0.42; // the closest the last walker stops behind the one before, in her heights
 
 // pictures come from files, or from the page itself in the single-file version
 function pictureUrl(path) {
@@ -74,6 +78,11 @@ function setup() {
 
 function draw() {
   background(255);
+  if (titleDue != null && millis() >= titleDue) {
+    titleDue = null;
+    showTitle = true;
+    titleFadeFrom = millis();
+  }
   if (showTitle) drawTitle();
 
   let h = personHeight();
@@ -133,8 +142,16 @@ function panView(h) {
   let goal = 0;
   if (panning && !finishing) goal = constrain(PAN_SPEED * h + ahead * 0.9, PAN_SPEED * h, PAN_TOP * h);
   let dt = min(deltaTime, 50) / 1000;
-  camSpeed += (goal - camSpeed) * (1 - exp(-dt * 0.7)); // eases in and out over a couple of seconds
+  camSpeed += (goal - camSpeed) * (1 - exp(-dt * (finishing ? 2 : 0.7))); // eases over a couple of seconds; to a stop in about one
   camX += camSpeed * dt;
+}
+
+// how far apart the last few in line stand, so the last walker keeps the same rhythm
+function lineSpacing(except, h) {
+  let xs = people.filter((p) => p != except && p.stopped).map((p) => p.x).sort((a, b) => a - b).slice(-4);
+  let gaps = xs.slice(1).map((x, i) => x - xs[i]);
+  let typical = gaps.length ? gaps.reduce((a, b) => a + b) / gaps.length : 0;
+  return constrain(typical, h * LINE_GAP, h);
 }
 
 // where the last one standing (or coming to a stop) is
@@ -162,7 +179,9 @@ function drawTitle() {
   let w = min(width * 0.72, ((groundY() - personHeight()) * 0.55 * el.width) / el.height);
   let h = (w * el.height) / el.width;
   let top = max(height * 0.07, (groundY() - personHeight() - h) * 0.4);
+  drawingContext.globalAlpha = constrain((millis() - titleFadeFrom) / TITLE_FADE, 0, 1);
   drawingContext.drawImage(el, (width - w) / 2, top, w, h);
+  drawingContext.globalAlpha = 1;
 }
 
 // ---- people ----
@@ -175,6 +194,7 @@ function newPerson() {
     walking.last = false;
   }
   finishing = false;
+  titleDue = null;
 
   let look = lookFor(personCount);
   people.push({
@@ -193,12 +213,13 @@ function movePerson(p, h) {
   // the last walker stops on her own, a step behind the one before
   if (p.last && !p.stopping) {
     let end = lineEnd(p);
-    let spot = end > -Infinity ? end + h * LINE_GAP : camX + width * 0.35; // on her own, she stops left of middle
+    let spot = end > -Infinity ? end + lineSpacing(p, h) : camX + width * 0.35; // on her own, she stops left of middle
     if (p.x <= spot) p.stopping = true;
   }
   let onScreen = p.x - camX < width - h * 0.3; // pressing 1 twice quickly mustn't leave someone stuck off the edge
   if (p.stopping && onScreen && stopFrames.includes(p.frame)) {
     p.stopped = true;
+    if (p.last) titleDue = millis() + TITLE_BEAT;
     return;
   }
   let step = h * WALK_SPEED * min(deltaTime, 50) / 1000;
@@ -219,14 +240,23 @@ function drawPerson(p, h) {
   pop();
 }
 
+// 2: whoever is walking stops, the pan comes to rest, and one last person walks on to join the end of the line
 function lastPerson() {
+  if (finishing) return;
+  newPerson();
+  let last = people[people.length - 1];
+  if (last) last.last = true;
   finishing = true;
-  let walking = people.find((p) => !p.stopping && !p.stopped);
-  if (walking) walking.last = true;
 }
 
 function undoPerson() {
-  people.pop();
+  let gone = people.pop();
+  if (gone && gone.last) {
+    // taking back the last one takes back the ending too
+    finishing = false;
+    titleDue = null;
+    showTitle = false;
+  }
   let last = people[people.length - 1];
   if (last && last.stopped && last.x - camX < width) {
     // whoever was standing last carries on, as if 1 hadn't been pressed
@@ -243,6 +273,8 @@ function startOver() {
   camSpeed = 0;
   panning = false;
   finishing = false;
+  titleDue = null;
+  showTitle = false;
   newPerson();
 }
 
