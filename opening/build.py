@@ -21,6 +21,8 @@ for n in range(1, 23):
     pictures["../walk/frames/walk%02d.png" % n] = here / ("../walk/frames/walk%02d.png" % n)
 for n in range(1, 50):
     pictures["title/title%02d.png" % n] = here / ("title/title%02d.png" % n)
+for n in range(1, 9):
+    pictures["title2/title%02d.png" % n] = here / ("title2/title%02d.png" % n)
 inline = ",\n".join(
     '"%s": "data:image/png;base64,%s"' % (k, base64.b64encode(v.read_bytes()).decode())
     for k, v in pictures.items()

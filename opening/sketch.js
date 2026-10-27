@@ -4,12 +4,16 @@
 // Uses prepareFrames and feetSpread from ../walk/frames.js.
 
 let FRAME_COUNT = 22;
-let TITLE_COUNT = 49;
 let TITLE_FPS = 8; // as the video was made
 
 let walkFrames = null; // what prepareFrames returns
 let stopFrames = []; // frames where her feet are close enough together to stand on
-let titleFrames = [];
+// the boiling title from the video, and the hand-lettered one (Y switches), wiggled by title2/make_wiggle.py
+let TITLES = [
+  { path: "title/title", count: 49, frames: [] },
+  { path: "title2/title", count: 8, frames: [] },
+];
+let titleIndex = 0;
 let showTitle = true;
 let people = []; // everyone on screen, oldest first
 let personCount = 0; // how many have walked on since the start
@@ -60,8 +64,8 @@ function setup() {
     }, 600);
   });
 
-  for (let n = 1; n <= TITLE_COUNT; n++) {
-    urlToImage(numbered("title/title", n)).then((el) => (titleFrames[n - 1] = el));
+  for (let t of TITLES) {
+    for (let n = 1; n <= t.count; n++) urlToImage(numbered(t.path, n)).then((el) => (t.frames[n - 1] = el));
   }
 
   showHint();
@@ -146,7 +150,8 @@ function groundY() {
 // ---- the title ----
 
 function drawTitle() {
-  let el = titleFrames[floor((millis() / 1000) * TITLE_FPS) % TITLE_COUNT];
+  let t = TITLES[titleIndex];
+  let el = t.frames[floor((millis() / 1000) * TITLE_FPS) % t.count];
   if (!el) return;
   let w = min(width * 0.72, ((groundY() - personHeight()) * 0.55 * el.width) / el.height);
   let h = (w * el.height) / el.width;
@@ -244,6 +249,10 @@ function keyPressed() {
   else if (keyCode == BACKSPACE || key == "z" || key == "Z") undoPerson();
   else if (key == "r" || key == "R") startOver();
   else if (key == "t" || key == "T") showTitle = !showTitle;
+  else if (key == "y" || key == "Y") {
+    titleIndex = (titleIndex + 1) % TITLES.length;
+    showTitle = true;
+  }
   else if (key == "f" || key == "F") fullscreen(!fullscreen());
   else if (key == "h" || key == "H" || key == "?") showHint(true);
   else return;
