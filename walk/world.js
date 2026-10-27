@@ -51,7 +51,7 @@ function horizonFor(floor, h) {
 
 // on a painted floor she walks near the bottom edge, the floor stretching away behind her
 function groundFor(floor, h) {
-  return floor == "line" ? h - FLOOR_GAP : round(h - max(FLOOR_GAP, h * 0.07));
+  return floor == "line" ? h - FLOOR_GAP : round(h * 0.86);
 }
 
 function groundOf(r) {
