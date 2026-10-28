@@ -1,6 +1,6 @@
 // Opening: a pen line on white, and her walking on from the right.
 // Press 1 and she stops where she is and someone new walks on, dressed a little differently.
-// Press 2 and the pan stops, one last person walks on to the end of the line, and a beat later the title comes on.
+// Press 2 and the pan stops and one last person walks on to the end of the line. T cues the title.
 // Uses prepareFrames from ../walk/frames.js, and dress and lookFor from dress.js.
 
 let FRAME_COUNT = 22;
@@ -13,10 +13,8 @@ let TITLES = [
   { path: "title2/title", count: 8, frames: [] },
 ];
 let titleIndex = 0;
-let showTitle = false; // no title until the end (or T)
-let titleDue = null; // when the title comes on, a beat after the last one stops
+let showTitle = false; // no title until T cues it
 let titleFadeFrom = -Infinity;
-let TITLE_BEAT = 1000; // ms
 let TITLE_FADE = 450; // ms
 let people = []; // everyone on screen, oldest first
 let personCount = 0; // how many have walked on since the start
@@ -71,11 +69,6 @@ function setup() {
 
 function draw() {
   background(255);
-  if (titleDue != null && millis() >= titleDue) {
-    titleDue = null;
-    showTitle = true;
-    titleFadeFrom = millis();
-  }
   if (showTitle) drawTitle();
 
   let h = personHeight();
@@ -91,12 +84,14 @@ function draw() {
 
 // ---- the ground ----
 
-// flat on the first screen; past it, where the view pans to, the ground starts to roll
+// straight, except for one jagged bump just past the first screen, where the view pans to
 function groundAt(x) {
-  let rough = constrain((x - width) / (width * 0.7), 0, 1);
-  rough = rough * rough * (3 - 2 * rough); // eases in, so there's no kink where the hills begin
-  let hills = (noise(x / 650) - 0.5) * 2 + (noise(500 + x / 190) - 0.5) * 0.5;
-  return groundY() - (hills + 0.35) * height * 0.13 * rough; // more rises than dips, so feet stay on screen
+  let d = (x - width * 1.45) / (width * 0.38);
+  if (abs(d) >= 1) return groundY();
+  let rise = 0.5 + 0.5 * cos(d * PI); // eases up from the straight and back down to it, with no kink
+  let lumps = 0.7 + 0.6 * noise(x / 170); // uneven, not a smooth hump
+  let jags = (noise(500 + x / 40) - 0.5) * 0.35; // a crooked, hand-drawn edge
+  return groundY() - rise * (lumps + jags) * height * 0.15;
 }
 
 function slopeAt(x) {
@@ -187,7 +182,6 @@ function newPerson() {
     walking.last = false;
   }
   finishing = false;
-  titleDue = null;
 
   let look = lookFor(personCount);
   people.push({
@@ -214,7 +208,6 @@ function movePerson(p, h) {
   if (p.stopping && onScreen) {
     // she freezes mid-step, on whatever frame she's on, so each one stands a little differently
     p.stopped = true;
-    if (p.last) titleDue = millis() + TITLE_BEAT;
     return;
   }
   let step = h * p.speed * min(deltaTime, 50) / 1000;
@@ -247,10 +240,7 @@ function lastPerson() {
 function undoPerson() {
   let gone = people.pop();
   if (gone && gone.last) {
-    // taking back the last one takes back the ending too
-    finishing = false;
-    titleDue = null;
-    showTitle = false;
+    finishing = false; // taking back the last one takes back the ending too
   }
   let last = people[people.length - 1];
   if (last && last.stopped && last.x - camX < width) {
@@ -268,9 +258,14 @@ function startOver() {
   camSpeed = 0;
   panning = false;
   finishing = false;
-  titleDue = null;
   showTitle = false;
   newPerson();
+}
+
+// T fades the title on; pressed again, it goes
+function cueTitle() {
+  showTitle = !showTitle;
+  if (showTitle) titleFadeFrom = millis();
 }
 
 // ---- keys ----
@@ -281,11 +276,8 @@ function keyPressed() {
   else if (key == "2") lastPerson();
   else if (keyCode == BACKSPACE || key == "z" || key == "Z") undoPerson();
   else if (key == "r" || key == "R") startOver();
-  else if (key == "t" || key == "T") showTitle = !showTitle;
-  else if (key == "y" || key == "Y") {
-    titleIndex = (titleIndex + 1) % TITLES.length;
-    showTitle = true;
-  }
+  else if (key == "t" || key == "T") cueTitle();
+  else if (key == "y" || key == "Y") titleIndex = (titleIndex + 1) % TITLES.length; // which title T will bring on
   else if (key == "f" || key == "F") fullscreen(!fullscreen());
   else if (key == "h" || key == "H" || key == "?") showHint(true);
   else return;
