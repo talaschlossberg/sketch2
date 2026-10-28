@@ -1,6 +1,7 @@
 // Opening: a pen line on white, and her walking on from the right.
 // Press 1 and she stops where she is and someone new walks on, dressed a little differently.
-// Press 2 and the pan stops and one last person walks on to the end of the line. T cues the title.
+// Press 2 and whoever is walking stops, the view glides to centre on her, and one last person walks on
+// to the end of the line. T cues the title.
 // Uses prepareFrames from ../walk/frames.js, and dress and lookFor from dress.js.
 
 let FRAME_COUNT = 22;
@@ -23,6 +24,8 @@ let camX = 0; // how far the view has panned right, following the line
 let camSpeed = 0;
 let panning = false; // a slow, steady pan, from when the line nears the far side until 2
 let finishing = false; // 2 was pressed
+let centreOn = null; // after 2, the view glides to put this one in the middle
+let lastSent = false;
 let ROOM_AHEAD = 0.4; // once the line reaches this share of the screen from the right, the pan begins
 let WALK_SPEED = 0.85; // her heights per second, each a little faster or slower, so their steps never fall in time
 let PAN_SPEED = 0.33; // the slowest the pan goes, in her heights per second
@@ -88,10 +91,7 @@ function draw() {
 function groundAt(x) {
   let d = (x - width * 1.45) / (width * 0.38);
   if (abs(d) >= 1) return groundY();
-  let rise = 0.5 + 0.5 * cos(d * PI); // eases up from the straight and back down to it, with no kink
-  let lumps = 0.7 + 0.6 * noise(x / 170); // uneven, not a smooth hump
-  let jags = (noise(500 + x / 90) - 0.5) * 0.06; // just a little crooked, hand-drawn
-  return groundY() - rise * (lumps + jags) * height * 0.15;
+  return groundY() - (0.5 + 0.5 * cos(d * PI)) * height * 0.15; // eases up from the straight and back down, smooth so they walk it smoothly
 }
 
 function slopeAt(x) {
@@ -124,13 +124,21 @@ function drawGround() {
 // The quicker you press 1, the further right the line ends up, and the pan speeds up to match,
 // so people stand spread out at whatever pace you send them on. It changes speed gradually, never in jerks.
 function panView(h) {
+  let dt = min(deltaTime, 50) / 1000;
+  if (finishing) {
+    // glide to put her in the middle, easing in and out (a spring that doesn't overshoot), then send the last one
+    let goal = centreOn ? centreOn.x - width / 2 : camX;
+    let w = 1.8;
+    camSpeed += ((goal - camX) * w * w - camSpeed * 2 * w) * dt;
+    camX += camSpeed * dt;
+    if (!lastSent && (!centreOn || centreOn.stopped) && abs(goal - camX) < 30) sendLast(); // as the glide settles, so nothing stands still for long
+    return;
+  }
   let mark = width * (1 - ROOM_AHEAD) - h * 0.2; // where the end of the line should sit on screen
   let ahead = lineEnd() - camX - mark;
-  if (!panning && !finishing && ahead > 0) panning = true;
-  let goal = 0;
-  if (panning && !finishing) goal = constrain(PAN_SPEED * h + ahead * 0.75, PAN_SPEED * h, PAN_TOP * h);
-  let dt = min(deltaTime, 50) / 1000;
-  camSpeed += (goal - camSpeed) * (1 - exp(-dt * (finishing ? 2 : 0.7))); // eases over a couple of seconds; to a stop in about one
+  if (!panning && ahead > 0) panning = true;
+  let goal = panning ? constrain(PAN_SPEED * h + ahead * 0.75, PAN_SPEED * h, PAN_TOP * h) : 0;
+  camSpeed += (goal - camSpeed) * (1 - exp(-dt * 0.7)); // eases over a couple of seconds
   camX += camSpeed * dt;
 }
 
@@ -182,6 +190,11 @@ function newPerson() {
     walking.last = false;
   }
   finishing = false;
+  centreOn = null;
+  sendPerson();
+}
+
+function sendPerson() {
 
   let look = lookFor(personCount);
   people.push({
@@ -229,19 +242,35 @@ function drawPerson(p, h) {
 }
 
 // 2: whoever is walking stops, the pan comes to rest, and one last person walks on to join the end of the line
+// 2: whoever is walking stops, and the view glides to put her in the middle (panView sends the last one after)
 function lastPerson() {
-  if (finishing) return;
-  newPerson();
-  let last = people[people.length - 1];
-  if (last) last.last = true;
+  if (finishing || !walkFrames) return;
+  let walking = people.find((p) => !p.stopping && !p.stopped);
+  if (walking) walking.stopping = true;
+  let line = people.filter((p) => p.stopped || p.stopping);
+  centreOn = walking || line.reduce((a, p) => (!a || p.x > a.x ? p : a), null);
   finishing = true;
+  lastSent = false;
+}
+
+function sendLast() {
+  lastSent = true;
+  sendPerson();
+  people[people.length - 1].last = true;
 }
 
 function undoPerson() {
-  let gone = people.pop();
-  if (gone && gone.last) {
-    finishing = false; // taking back the last one takes back the ending too
+  if (finishing) {
+    // takes back the ending (and the last one, if she's on), and the pan carries on
+    if (lastSent) {
+      people.pop();
+      personCount--;
+    }
+    finishing = false;
+    centreOn = null;
+    return;
   }
+  people.pop();
   let last = people[people.length - 1];
   if (last && last.stopped && last.x - camX < width) {
     // whoever was standing last carries on, as if 1 hadn't been pressed
@@ -258,6 +287,7 @@ function startOver() {
   camSpeed = 0;
   panning = false;
   finishing = false;
+  centreOn = null;
   showTitle = false;
   newPerson();
 }
