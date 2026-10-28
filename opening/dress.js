@@ -51,60 +51,63 @@ function seededRandom(seed) {
 
 // a set of canvases, one per frame, with the look painted in
 function dress(frames, look) {
+  return frames.imgs.map((img) => dressFrame(frames, look, img));
+}
+
+// one frame of it; sketch.js dresses people a frame at a time ahead of when they're needed, so nothing stutters
+function dressFrame(frames, look, img) {
   let { crop } = frames;
-  return frames.imgs.map((img) => {
-    let c = document.createElement("canvas");
-    c.width = img.width;
-    c.height = img.height;
-    let g = c.getContext("2d");
-    g.drawImage(img.canvas, 0, 0);
-    if (!look.shirt && !look.trousers && !look.hair && look.skin == 1) return c;
+  let c = document.createElement("canvas");
+  c.width = img.width;
+  c.height = img.height;
+  let g = c.getContext("2d");
+  g.drawImage(img.canvas, 0, 0);
+  if (!look.shirt && !look.trousers && !look.hair && look.skin == 1) return c;
 
-    let data = g.getImageData(crop.x, crop.y, crop.w, crop.h);
-    let p = data.data;
-    let hsl = [0, 0, 0];
-    for (let y = 0; y < crop.h; y++) {
-      let down = y / crop.h; // 0 at the top of her head, 1 at her feet
-      for (let x = 0; x < crop.w; x++) {
-        let i = (y * crop.w + x) * 4;
-        if (p[i + 3] < 10) continue;
-        toHsl(p[i], p[i + 1], p[i + 2], hsl);
-        let [h, s, l] = hsl;
-        let reddish = h < 50 || h > 320;
+  let data = g.getImageData(crop.x, crop.y, crop.w, crop.h);
+  let p = data.data;
+  let hsl = [0, 0, 0];
+  for (let y = 0; y < crop.h; y++) {
+    let down = y / crop.h; // 0 at the top of her head, 1 at her feet
+    for (let x = 0; x < crop.w; x++) {
+      let i = (y * crop.w + x) * 4;
+      if (p[i + 3] < 10) continue;
+      toHsl(p[i], p[i + 1], p[i + 2], hsl);
+      let [h, s, l] = hsl;
+      let reddish = h < 50 || h > 320;
 
-        if (s > 0.12 && ((l > 0.3 && h >= 8 && h < 50) || (l > 0.45 && reddish))) {
-          // skin (the shirt's highlights are as light, but pinker)
-          if (look.skin == 1) continue;
-          l *= look.skin;
-          if (look.skin < 1) s = Math.min(1, s * (1 + (1 - look.skin) * 0.4));
-        } else if (l > 0.7) {
-          continue; // her white socks
-        } else if (down < 0.17 || (down < 0.32 && h >= 8 && h < 50)) {
-          // hair: all of the head, and the brown (not the maroon of the shirt) that falls over her shoulders
-          if (!look.hair) continue;
-          l = Math.min(0.85, l * look.hair.k);
-          h = look.hair.h;
-          s = look.hair.s;
-        } else if (down < 0.5 && reddish && s > 0.04) {
-          // shirt
-          if (!look.shirt) continue;
-          l = constrain(look.shirt.l + (l - 0.16) * 1.1, 0.02, 0.95); // her folds and shading, around the new colour
-          h = look.shirt.h;
-          s = look.shirt.s;
-        } else if (down > 0.38 && down < 0.9) {
-          // trousers (the shoes below stay black)
-          if (!look.trousers) continue;
-          l = Math.min(0.85, l * look.trousers.k);
-          h = look.trousers.h;
-          s = look.trousers.s;
-        } else continue;
+      if (s > 0.12 && ((l > 0.3 && h >= 8 && h < 50) || (l > 0.45 && reddish))) {
+        // skin (the shirt's highlights are as light, but pinker)
+        if (look.skin == 1) continue;
+        l *= look.skin;
+        if (look.skin < 1) s = Math.min(1, s * (1 + (1 - look.skin) * 0.4));
+      } else if (l > 0.7) {
+        continue; // her white socks
+      } else if (down < 0.17 || (down < 0.32 && h >= 8 && h < 50)) {
+        // hair: all of the head, and the brown (not the maroon of the shirt) that falls over her shoulders
+        if (!look.hair) continue;
+        l = Math.min(0.85, l * look.hair.k);
+        h = look.hair.h;
+        s = look.hair.s;
+      } else if (down < 0.5 && reddish && s > 0.04) {
+        // shirt
+        if (!look.shirt) continue;
+        l = constrain(look.shirt.l + (l - 0.16) * 1.1, 0.02, 0.95); // her folds and shading, around the new colour
+        h = look.shirt.h;
+        s = look.shirt.s;
+      } else if (down > 0.38 && down < 0.9) {
+        // trousers (the shoes below stay black)
+        if (!look.trousers) continue;
+        l = Math.min(0.85, l * look.trousers.k);
+        h = look.trousers.h;
+        s = look.trousers.s;
+      } else continue;
 
-        toRgb(h, s, l, p, i);
-      }
+      toRgb(h, s, l, p, i);
     }
-    g.putImageData(data, crop.x, crop.y);
-    return c;
-  });
+  }
+  g.putImageData(data, crop.x, crop.y);
+  return c;
 }
 
 // h in degrees, s and l from 0 to 1

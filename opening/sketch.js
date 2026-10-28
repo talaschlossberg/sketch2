@@ -20,6 +20,8 @@ let TITLE_FADE = 450; // ms
 let people = []; // everyone on screen, oldest first
 let personCount = 0; // how many have walked on since the start
 let hintTimer = null;
+let wardrobe = new Map(); // person number -> her frames, dressed a few at a time before she's needed
+let READY_AHEAD = 3;
 let camX = 0; // how far the view has panned right, following the line
 let camSpeed = 0;
 let panning = false; // a slow, steady pan, from when the line nears the far side until 2
@@ -71,6 +73,7 @@ function setup() {
 }
 
 function draw() {
+  dressAhead();
   background(255);
   if (showTitle) drawTitle();
 
@@ -195,8 +198,6 @@ function newPerson() {
 }
 
 function sendPerson() {
-
-  let look = lookFor(personCount);
   people.push({
     x: camX + width + personHeight() * 0.4,
     stride: random(FRAME_COUNT) * walkFrames.stepPerFrame * personHeight(), // each starts at a different point in the stride
@@ -204,9 +205,30 @@ function sendPerson() {
     frame: 0,
     stopping: false,
     stopped: false,
-    imgs: dress(walkFrames, look),
+    imgs: clothesFor(personCount),
   });
   personCount++;
+}
+
+// recolouring a whole person at once takes long enough to make everything stutter,
+// so the next few are dressed one frame per frame drawn, ready before anyone presses 1
+function dressAhead() {
+  if (!walkFrames) return;
+  for (let n = personCount; n < personCount + READY_AHEAD; n++) {
+    let w = wardrobe.get(n);
+    if (!w) wardrobe.set(n, (w = { look: lookFor(n), imgs: [] }));
+    if (w.imgs.length < FRAME_COUNT) {
+      w.imgs.push(dressFrame(walkFrames, w.look, walkFrames.imgs[w.imgs.length]));
+      return;
+    }
+  }
+}
+
+function clothesFor(n) {
+  let w = wardrobe.get(n) || { look: lookFor(n), imgs: [] };
+  while (w.imgs.length < FRAME_COUNT) w.imgs.push(dressFrame(walkFrames, w.look, walkFrames.imgs[w.imgs.length])); // pressed faster than they could be got ready
+  wardrobe.delete(n);
+  return w.imgs;
 }
 
 function movePerson(p, h) {
