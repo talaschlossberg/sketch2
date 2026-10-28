@@ -9,7 +9,6 @@ let FRAME_COUNT = 22;
 let TITLE_FPS = 8; // as the video was made
 
 let walkFrames = null; // what prepareFrames returns
-let stopFrames = []; // frames where her feet are together, as if standing
 // the boiling title from the video, and the hand-lettered one (Y switches), wiggled by title2/make_wiggle.py
 let TITLES = [
   { path: "title/title", count: 49, frames: [] },
@@ -22,14 +21,14 @@ let titleFadeFrom = -Infinity;
 let hintTimer = null;
 
 // the timing, in her heights and seconds
-let WALK_SPEED = 0.85; // how fast they walk
-let SEND_EVERY = 1.1; // seconds between people joining the line
-let SPACING = 0.55; // how far apart they stand, give or take
+let WALK_SPEED = 0.85; // how fast they walk, each a little faster or slower
+let SEND_EVERY = 1.05; // seconds between people joining the line, on average; some come close behind, some after a gap
+let SPACING = 0.55; // how far apart they stand, on average
 let PAN_SPEED = 0.9; // a slow, steady pan
 let PAN_FROM = 0.82; // the pan starts when the line reaches this far across the screen
 let PAN_BY = 0.9; // and moves this many screen widths
 let PAN_UNTIL = 0.5; // people keep joining until the line reaches halfway across the final view
-let TITLE_BEAT = 1000; // ms after the last one stops
+let TITLE_BEAT = 800; // ms after the last one stops
 let TITLE_FADE = 450; // ms
 
 let people = []; // everyone on screen, oldest first
@@ -38,13 +37,14 @@ let camX = 0; // how far the view has panned right
 let camSpeed = 0;
 let stage = "waiting";
 // waiting -> first (she walks across and off) -> lining (people join; the pan starts and stops
-// on its own) -> settling (no one new until the pan and everyone have stopped) -> last -> done
+// on its own) -> last (the last one is on her way) -> done (the title is due)
 let tail = null; // where the last one sent will stand, in ground coordinates
 let nextSend = 0; // ms
 let panning = false;
 let panEnd = 0; // where the view comes to rest
 let bump = null; // { at, wide, tall }, in the left half of where the view comes to rest
-let spacingRandom = null;
+let chance = null; // seeded, so every run plays out the same
+let lastPose = -1;
 
 // pictures come from files, or from the page itself in the single-file version
 function pictureUrl(path) {
@@ -72,12 +72,6 @@ function setup() {
   for (let n = 1; n <= FRAME_COUNT; n++) walkEls.push(urlToImage(numbered("../walk/frames/walk", n)));
   Promise.all(walkEls).then((els) => {
     walkFrames = prepareFrames(els);
-    let spreads = walkFrames.imgs.map((img) => feetSpread(img, walkFrames.crop));
-    let lo = min(spreads);
-    let hi = max(spreads);
-    spreads.forEach((s, i) => {
-      if (s <= lo + (hi - lo) * 0.08) stopFrames.push(i);
-    });
     setTimeout(() => {
       if (stage == "waiting") playFromStart();
     }, 800);
@@ -125,9 +119,10 @@ function playFromStart() {
   tail = null;
   showTitle = false;
   titleDue = null;
-  spacingRandom = seededRandom(11);
+  chance = seededRandom(11);
+  lastPose = -1;
   panEnd = width * PAN_BY;
-  bump = { at: panEnd + width * 0.33, wide: width * 0.28, tall: height * 0.12 }; // off the first screen, so it opens on a flat line
+  bump = { at: panEnd + width * 0.33, wide: width * 0.28, tall: height * 0.15 }; // off the first screen, so it opens on a flat line
   sendPerson(null); // the first one walks straight across and off
   stage = "first";
 }
@@ -142,17 +137,18 @@ function direct(h) {
     if (!first || first.x - camX < width * 0.5) {
       tail = camX + h * 0.24;
       sendPerson(tail);
-      nextSend = now + SEND_EVERY * 1000;
+      nextSend = now + sendGap();
       stage = "lining";
     }
   } else if (stage == "lining") {
     if (now >= nextSend) {
-      let spot = tail + h * SPACING * (0.85 + 0.3 * spacingRandom());
-      if (spot > panEnd + width * PAN_UNTIL) stage = "settling"; // the final view is half full
-      else {
-        tail = spot;
-        sendPerson(tail);
-        nextSend += SEND_EVERY * 1000;
+      tail += h * SPACING * (0.65 + 0.8 * chance());
+      let p = sendPerson(tail);
+      nextSend += sendGap();
+      if (tail > panEnd + width * PAN_UNTIL) {
+        // the final view is half full: she's the last, and she's already on her way as the pan comes to rest
+        p.last = true;
+        stage = "last";
       }
     }
   }
@@ -163,15 +159,9 @@ function direct(h) {
   }
   if (panning && camX >= panEnd - camSpeed / 1.6) panning = false;
 
-  if (stage == "settling") {
-    if (camX > 0 && !panning && abs(camSpeed) < 2 && line.every((p) => p.stopped)) {
-      tail += h * SPACING;
-      sendPerson(tail).last = true;
-      stage = "last";
-    }
-  } else if (stage == "last") {
+  if (stage == "last") {
     let last = people[people.length - 1];
-    if (last.stopped) {
+    if (last.stopped && !panning && abs(camSpeed) < 2) {
       titleDue = now + TITLE_BEAT;
       stage = "done";
     }
@@ -179,18 +169,27 @@ function direct(h) {
 }
 
 // someone new walks on from the right; with a spot, she stops there
+// staggered: sometimes close behind the one before, sometimes after a pause
+function sendGap() {
+  return SEND_EVERY * 1000 * (0.4 + 1.2 * chance());
+}
+
 function sendPerson(spot) {
   let h = personHeight();
   let x = camX + width + h * 0.4;
+  if (spot != null) x = max(x, spot + h); // a spot past the edge: she starts further out, and the pan finds her there
   let cycle = FRAME_COUNT * walkFrames.stepPerFrame * h;
   let stride = random(cycle);
   if (spot != null) {
-    // start her stride so that she arrives at her spot with her feet together
-    let k = random(stopFrames);
+    // start her stride so that she arrives at her spot on her pose, a different one from the person before
+    let k = floor(chance() * FRAME_COUNT);
+    if (k == lastPose) k = (k + 7) % FRAME_COUNT;
+    lastPose = k;
     let arrive = (k + 0.5) * walkFrames.stepPerFrame * h;
     stride = (((arrive - (x - spot)) % cycle) + cycle) % cycle;
   }
-  let p = { x, spot, stride, frame: 0, stopped: false, imgs: dress(walkFrames, lookFor(sent)) };
+  let speed = WALK_SPEED * (0.9 + 0.2 * chance());
+  let p = { x, spot, stride, speed, frame: 0, stopped: false, imgs: dress(walkFrames, lookFor(sent)) };
   sent++;
   people.push(p);
   return p;
@@ -198,7 +197,7 @@ function sendPerson(spot) {
 
 function movePerson(p, h, dt) {
   if (p.stopped) return;
-  let step = h * WALK_SPEED * dt;
+  let step = h * p.speed * dt;
   if (p.spot != null && p.x - step <= p.spot) {
     step = p.x - p.spot;
     p.stopped = true;
@@ -206,7 +205,7 @@ function movePerson(p, h, dt) {
   p.x -= step;
   p.stride += step;
   // the frames follow the distance covered, so her feet don't slide
-  p.frame = floor(p.stride / (walkFrames.stepPerFrame * h)) % FRAME_COUNT;
+  p.frame = ((floor(p.stride / (walkFrames.stepPerFrame * h)) % FRAME_COUNT) + FRAME_COUNT) % FRAME_COUNT;
 }
 
 // the view eases into a steady pan and eases out of it again
@@ -228,12 +227,15 @@ function groundY() {
 
 // ---- the ground ----
 
-// flat, except for one rounded bump just past the first screen, where the view pans to
+// flat on the first screen; past it the ground goes crooked, with a lumpy bump where the view comes to rest
 function groundAt(x) {
   if (!bump) return groundY();
+  let rough = constrain((x - width * 1.02) / (width * 0.5), 0, 1);
+  rough = rough * rough * (3 - 2 * rough); // eases in, so there's no kink where it starts
+  let crooked = ((noise(x / 520) - 0.5) * 2 + (noise(500 + x / 140) - 0.5) * 0.7) * height * 0.06;
   let d = (x - bump.at) / bump.wide;
-  if (abs(d) >= 1) return groundY();
-  return groundY() - bump.tall * (0.5 + 0.5 * cos(d * PI));
+  let hill = abs(d) < 1 ? bump.tall * (0.5 + 0.5 * cos(d * PI)) * (0.8 + 0.35 * noise(300 + x / 160)) : 0;
+  return groundY() - (crooked + hill) * rough;
 }
 
 function slopeAt(x) {
