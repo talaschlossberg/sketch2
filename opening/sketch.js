@@ -25,7 +25,7 @@ let panning = false; // a slow, steady pan, from when the line nears the far sid
 let finishing = false; // 2 was pressed
 let ROOM_AHEAD = 0.4; // once the line reaches this share of the screen from the right, the pan begins
 let WALK_SPEED = 0.85; // her heights per second, each a little faster or slower, so their steps never fall in time
-let PAN_SPEED = 0.4; // the slowest the pan goes, in her heights per second
+let PAN_SPEED = 0.33; // the slowest the pan goes, in her heights per second
 let PAN_TOP = 2.5; // the fastest
 let LINE_GAP = 0.42; // the closest the last walker stops behind the one before, in her heights
 
@@ -90,7 +90,7 @@ function groundAt(x) {
   if (abs(d) >= 1) return groundY();
   let rise = 0.5 + 0.5 * cos(d * PI); // eases up from the straight and back down to it, with no kink
   let lumps = 0.7 + 0.6 * noise(x / 170); // uneven, not a smooth hump
-  let jags = (noise(500 + x / 40) - 0.5) * 0.35; // a crooked, hand-drawn edge
+  let jags = (noise(500 + x / 90) - 0.5) * 0.06; // just a little crooked, hand-drawn
   return groundY() - rise * (lumps + jags) * height * 0.15;
 }
 
@@ -128,7 +128,7 @@ function panView(h) {
   let ahead = lineEnd() - camX - mark;
   if (!panning && !finishing && ahead > 0) panning = true;
   let goal = 0;
-  if (panning && !finishing) goal = constrain(PAN_SPEED * h + ahead * 0.9, PAN_SPEED * h, PAN_TOP * h);
+  if (panning && !finishing) goal = constrain(PAN_SPEED * h + ahead * 0.75, PAN_SPEED * h, PAN_TOP * h);
   let dt = min(deltaTime, 50) / 1000;
   camSpeed += (goal - camSpeed) * (1 - exp(-dt * (finishing ? 2 : 0.7))); // eases over a couple of seconds; to a stop in about one
   camX += camSpeed * dt;
