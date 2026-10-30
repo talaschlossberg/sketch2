@@ -46,7 +46,7 @@ function floorOf(r = room()) {
 
 // where the floor meets the wall, and the line she walks on, in a box h tall
 function horizonFor(floor, h) {
-  return floor == "line" ? h - FLOOR_GAP : round(h * 0.6);
+  return floor == "line" ? h - FLOOR_GAP : round(h * 0.67);
 }
 
 // on a painted floor she walks near the bottom edge, the floor stretching away behind her
