@@ -1,8 +1,9 @@
 # sketch2
 
-Two small p5.js / web experiments.
+Small p5.js / web experiments.
 
 - **`index.html`** — the original "Two Toes Creative" generative collage sketch.
+- **`world/`** — **Little World**: a paper-collage field with a door that leads into a red room. Drag the shapes, bounce the ball into the pond, tap the vase and the pots (leaves grow), and tap the window to go back outside.
 - **`coloring/`** — **Snap & Color**: take a photo, turn it into a coloring-book outline, and tap the spaces to fill them. Every color plays its own note.
 
 ## Snap & Color
