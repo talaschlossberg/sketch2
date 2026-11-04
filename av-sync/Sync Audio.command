@@ -1,45 +1,90 @@
 #!/bin/bash
-# Double-click to open Audio Sync (macOS).
+# Double-click to sync audio to video (macOS).
+# Uses the Mac's own folder pickers, then shows progress in this window.
 # First run sets up a private Python environment with everything it needs (~1 min).
 
 cd "$(dirname "$0")" || exit 1
-export TK_SILENCE_DEPRECATION=1
-ENV="$HOME/Library/Application Support/AudioSync/venv"
+HERE="$(pwd)"
+SUPPORT="$HOME/Library/Application Support/AudioSync"
+ENV="$SUPPORT/venv"
+mkdir -p "$SUPPORT"
 
-say_error() {
-  osascript -e "display dialog \"$1\" buttons {\"OK\"} default button 1 with title \"Audio Sync\" with icon caution" >/dev/null 2>&1
+alert() {  # alert "message" -> simple OK dialog
+  osascript -e "display dialog \"$1\" buttons {\"OK\"} default button 1 with title \"Audio Sync\"" >/dev/null 2>&1
 }
 
-# Find a Python 3 that has the window toolkit (tkinter). python.org's installer is preferred.
+# ---------- 1. Python + packages (first run only) ----------
 PY=""
 for c in /Library/Frameworks/Python.framework/Versions/Current/bin/python3 \
          /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
-  if [ -x "$c" ] && "$c" -c "import tkinter, venv" >/dev/null 2>&1; then PY="$c"; break; fi
+  if [ -x "$c" ] && "$c" -c "import venv" >/dev/null 2>&1; then PY="$c"; break; fi
 done
-
 if [ -z "$PY" ]; then
-  echo "Python 3 is needed. Opening the download page..."
-  say_error "Audio Sync needs Python (free, one-time install).\n\nThe download page will open now. Install it, then double-click Sync Audio again."
+  alert "Audio Sync needs Python (free, one-time install).\n\nThe download page will open now. Install it, then double-click Sync Audio again."
   open "https://www.python.org/downloads/macos/"
   exit 1
 fi
 
-if [ "$(cat "$ENV/.built_with" 2>/dev/null)" != "$PY" ] || \
-   ! "$ENV/bin/python" -c "import numpy, imageio_ffmpeg" >/dev/null 2>&1; then
+if ! "$ENV/bin/python" -c "import numpy, imageio_ffmpeg" >/dev/null 2>&1; then
   echo "First-time setup: installing what Audio Sync needs. This takes about a minute..."
   rm -rf "$ENV"
-  mkdir -p "$(dirname "$ENV")"
   "$PY" -m venv "$ENV" &&
   "$ENV/bin/python" -m pip install --quiet --upgrade pip &&
   "$ENV/bin/python" -m pip install --quiet numpy imageio-ffmpeg &&
   "$ENV/bin/python" -c "import imageio_ffmpeg; imageio_ffmpeg.get_ffmpeg_exe()"
   if [ $? -ne 0 ]; then
-    say_error "Setup didn't finish. Check your internet connection and try again.\n\nDetails are in the Terminal window."
+    alert "Setup didn't finish. Check your internet connection and try again.\n\nDetails are in the Terminal window."
     exit 1
   fi
-  echo "$PY" > "$ENV/.built_with"
   echo "Setup complete."
 fi
 
-echo "Opening Audio Sync... (you can leave this Terminal window alone; closing it closes the app)"
-exec "$ENV/bin/python" avsync_app.py 2> >(grep -v "DEPRECATION WARNING" >&2)
+# ---------- 2. Pick folders with the normal Mac dialogs ----------
+LAST="$(cat "$SUPPORT/last_folder" 2>/dev/null)"
+[ -d "$LAST" ] || LAST="/Volumes"
+
+pick() {  # pick "prompt" "start folder"  -> prints chosen POSIX path, empty if cancelled
+  osascript -e "POSIX path of (choose folder with prompt \"$1\" default location (POSIX file \"$2\"))" 2>/dev/null
+}
+
+echo "Choose your video folder in the window that just opened..."
+VIDEO="$(pick "Choose the folder with your VIDEO clips" "$LAST")"
+[ -z "$VIDEO" ] && { echo "Cancelled."; exit 0; }
+VIDEO="${VIDEO%/}"
+echo "$VIDEO" > "$SUPPORT/last_folder"
+
+ANSWER="$(osascript -e 'button returned of (display dialog "Are the audio files in the same folder as the videos?" buttons {"No, choose audio folder", "Yes, same folder"} default button 2 with title "Audio Sync")' 2>/dev/null)"
+[ -z "$ANSWER" ] && { echo "Cancelled."; exit 0; }
+if [ "$ANSWER" = "Yes, same folder" ]; then
+  AUDIO="$VIDEO"
+else
+  AUDIO="$(pick "Choose the folder with your AUDIO files" "$VIDEO")"
+  [ -z "$AUDIO" ] && { echo "Cancelled."; exit 0; }
+  AUDIO="${AUDIO%/}"
+fi
+OUT="$VIDEO/Synced"
+
+# ---------- 3. Sync ----------
+echo
+echo "Videos:  $VIDEO"
+echo "Audio:   $AUDIO"
+echo "Save to: $OUT"
+echo "Working... (keep this window open; you can minimize it)"
+echo
+
+LOG="$SUPPORT/last_run.log"
+"$ENV/bin/python" -u "$HERE/avsync.py" "$VIDEO" "$AUDIO" "$OUT" -r --container mov 2>&1 | tee "$LOG"
+
+SUMMARY="$(grep '^Finished:' "$LOG" | tail -1)"
+if [ -z "$SUMMARY" ]; then
+  if grep -q "Nothing to do" "$LOG"; then
+    alert "No matching audio and video files were found.\n\nFiles need the same name, for example A001.mov and A001.wav."
+  else
+    alert "Something went wrong. The details are in the Terminal window - send a screenshot of it."
+  fi
+  exit 1
+fi
+
+CHOICE="$(osascript -e "button returned of (display dialog \"$SUMMARY\n\nAnything marked with ! in the Terminal window needs a look.\" buttons {\"Close\", \"Open Synced folder\"} default button 2 with title \"Audio Sync\")" 2>/dev/null)"
+[ "$CHOICE" = "Open Synced folder" ] && open "$OUT"
+exit 0

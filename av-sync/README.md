@@ -16,15 +16,23 @@ Files are paired by name: `A001.mov` goes with `A001.wav`.
 4. If you don't have Python, it opens the download page for you. Install it, then double-click **Sync Audio** again.
 5. The first launch spends about a minute installing what it needs. After that it opens straight away.
 
-### Every time
+### Every time (Mac)
 
-1. Double-click **Sync Audio**. A window opens.
-2. **Video folder → Choose...** and pick the folder on your external drive with the clips.
-3. **Audio folder:** leave it empty if the audio files are in the same folder. Otherwise choose their folder.
-4. **Save to:** leave it empty and a `Synced` folder is made inside your video folder.
-5. Press **Sync**. When it says *All done*, click **Open synced folder**.
+1. Double-click **Sync Audio.command**.
+2. A folder picker opens. Choose the folder on your external drive with the **video** clips.
+3. It asks whether the audio is in the same folder. Click **Yes**, or **No** and choose the audio folder.
+4. Progress shows in the Terminal window (keep it open; minimizing is fine).
+5. When it's done, click **Open Synced folder**. The new files are in a `Synced` folder inside your video folder.
 
-The window remembers your folders, so next time you just press **Sync**. Clips that are already done are skipped, so after adding new footage you can simply run it again.
+If macOS asks whether Terminal may access files on a removable volume, click **Allow**.
+
+### Every time (Windows)
+
+1. Double-click **Sync Audio.bat**. A window opens.
+2. **Video folder → Choose...** and pick the folder with the clips. Leave **Audio folder** empty if the audio is in the same folder. Leave **Save to** empty for a `Synced` folder inside it.
+3. Press **Sync**. When it says *All done*, click **Open synced folder**.
+
+Either way, clips that are already done are skipped, so after adding new footage you can simply run it again.
 
 ## What you get
 
