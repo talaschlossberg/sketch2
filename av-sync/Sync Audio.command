@@ -3,6 +3,7 @@
 # First run sets up a private Python environment with everything it needs (~1 min).
 
 cd "$(dirname "$0")" || exit 1
+export TK_SILENCE_DEPRECATION=1
 ENV="$HOME/Library/Application Support/AudioSync/venv"
 
 say_error() {
@@ -23,7 +24,8 @@ if [ -z "$PY" ]; then
   exit 1
 fi
 
-if [ ! -x "$ENV/bin/python" ] || ! "$ENV/bin/python" -c "import numpy, imageio_ffmpeg" >/dev/null 2>&1; then
+if [ "$(cat "$ENV/.built_with" 2>/dev/null)" != "$PY" ] || \
+   ! "$ENV/bin/python" -c "import numpy, imageio_ffmpeg" >/dev/null 2>&1; then
   echo "First-time setup: installing what Audio Sync needs. This takes about a minute..."
   rm -rf "$ENV"
   mkdir -p "$(dirname "$ENV")"
@@ -35,8 +37,9 @@ if [ ! -x "$ENV/bin/python" ] || ! "$ENV/bin/python" -c "import numpy, imageio_f
     say_error "Setup didn't finish. Check your internet connection and try again.\n\nDetails are in the Terminal window."
     exit 1
   fi
+  echo "$PY" > "$ENV/.built_with"
   echo "Setup complete."
 fi
 
 echo "Opening Audio Sync... (you can leave this Terminal window alone; closing it closes the app)"
-exec "$ENV/bin/python" avsync_app.py
+exec "$ENV/bin/python" avsync_app.py 2> >(grep -v "DEPRECATION WARNING" >&2)

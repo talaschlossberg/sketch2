@@ -246,6 +246,11 @@ def main():
     except tk.TclError:
         pass
     App(root)
+    # Come to the front instead of opening behind the Terminal window.
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(600, lambda: root.attributes("-topmost", False))
+    root.focus_force()
     root.mainloop()
 
 
