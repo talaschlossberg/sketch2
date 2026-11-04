@@ -63,7 +63,7 @@ class App:
 
         ttk.Label(frm, text="Sync audio to video", font=("", 16, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 2))
-        ttk.Label(frm, text="Files are matched by name: A001.mov goes with A001.wav.",
+        ttk.Label(frm, text="Clips are matched to audio by name, or by listening when names differ.",
                   foreground="gray").grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
         self.video_var = tk.StringVar(value=s.get("video", ""))
@@ -226,8 +226,8 @@ class App:
         if error:
             messagebox.showerror("Audio Sync", f"Something went wrong:\n\n{error}")
         elif ok == 0 and bad == 0:
-            messagebox.showinfo("Audio Sync", "No matching audio/video pairs were found.\n\n"
-                                "Files need the same name, e.g. A001.mov and A001.wav.")
+            messagebox.showinfo("Audio Sync", "Couldn't find both video clips and audio files "
+                                "in the chosen folders.")
         elif bad:
             messagebox.showwarning("Audio Sync", f"{ok} clip(s) synced.\n{bad} clip(s) need a look "
                                    "- see the messages marked with '!' in the window.")

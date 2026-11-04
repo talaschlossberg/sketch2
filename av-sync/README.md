@@ -2,7 +2,16 @@
 
 Lines up your separately recorded audio with your video clips and saves new, merged video files. It runs on your own computer, straight off your external drive, so nothing gets uploaded.
 
-Files are paired by name: `A001.mov` goes with `A001.wav`.
+It works out which audio file goes with which clip by itself: by matching names when they match (`A001.mov` + `A001.wav`), otherwise by **listening** to both. So a card layout like this just works:
+
+```
+2026-10-14/
+  A001/   C0001.MP4  C0002.MP4 ...
+  A002/   C0001.MP4  ...
+  SOUND/  251014_001.WAV  251014_002.WAV ...
+```
+
+Pick `2026-10-14` and you get `2026-10-14/Synced/A001/C0001_synced.mov` and so on. One long recording can cover several clips. Sony proxy files (`M4ROOT/SUB`) are ignored.
 
 ## How to use it
 
@@ -19,8 +28,8 @@ Files are paired by name: `A001.mov` goes with `A001.wav`.
 ### Every time (Mac)
 
 1. Double-click **Sync Audio.command**.
-2. A folder picker opens. Choose the folder on your external drive with the **video** clips.
-3. It asks whether the audio is in the same folder. Click **Yes**, or **No** and choose the audio folder.
+2. A folder picker opens. Choose the shoot-day folder on your external drive (the one with the camera folders and SOUND inside).
+3. It asks whether the audio is inside that folder too. Click **Yes**, or **No** and choose the audio folder.
 4. Progress shows in the Terminal window (keep it open; minimizing is fine).
 5. When it's done, click **Open Synced folder**. The new files are in a `Synced` folder inside your video folder.
 
@@ -47,8 +56,8 @@ There is also a `sync_report.csv` with the offset found for every clip.
 
 ## If a clip says "weak match"
 
-The program couldn't hear the same sound on both files, so it skipped the clip rather than guess. Usually this means:
-- the two files don't actually belong together (check the names), or
+Or "no audio file matched this clip". The program couldn't hear the same sound on the clip and any audio file, so it skipped the clip rather than guess. Usually this means:
+- there's no recording for that clip (e.g. the recorder wasn't running), or
 - the camera's sound is silent or very quiet.
 
 ## Good to know

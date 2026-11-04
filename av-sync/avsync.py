@@ -80,16 +80,16 @@ def probe(ffmpeg: str, path: Path):
     return duration, has_audio
 
 
-def load_audio(ffmpeg: str, path: Path, max_seconds=None) -> np.ndarray:
-    """Decode the first audio stream to mono float32 at ANALYSIS_RATE."""
+def load_audio(ffmpeg: str, path: Path, max_seconds=None, rate=ANALYSIS_RATE) -> np.ndarray:
+    """Decode the first audio stream to mono float32 at `rate`."""
     cmd = [ffmpeg, "-v", "error", "-nostdin", "-i", str(path)]
     if max_seconds:
         cmd += ["-t", str(max_seconds)]
-    cmd += ["-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(ANALYSIS_RATE), "-f", "f32le", "-"]
+    cmd += ["-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(rate), "-f", "f32le", "-"]
     p = _run(cmd)
     if p.returncode != 0:
         raise RuntimeError(_last_line(p.stderr) or f"could not read audio from {path.name}")
-    return np.frombuffer(p.stdout, dtype=np.float32).astype(np.float64)
+    return np.frombuffer(p.stdout, dtype=np.float32)
 
 
 def _last_line(stderr: bytes) -> str:
@@ -101,21 +101,24 @@ def _last_line(stderr: bytes) -> str:
 # File discovery
 # --------------------------------------------------------------------------- #
 
-def find_media(folder: Path, exts: set, recursive: bool, skip_dir: Path = None, log=print) -> dict:
-    """Map lower-case file stem -> path. Skips macOS '._' files and the output folder."""
+def list_media(folder: Path, exts: set, recursive: bool, skip_dir: Path = None) -> list:
+    """All media files under folder. Skips macOS '._' files, hidden folders,
+    Sony proxy folders (M4ROOT/SUB) and the output folder."""
     pattern = "**/*" if recursive else "*"
     skip = skip_dir.resolve() if skip_dir else None
-    found = {}
+    found = []
     for p in sorted(folder.glob(pattern)):
-        if not p.is_file() or p.name.startswith("._") or p.suffix.lower() not in exts:
+        if not p.is_file() or p.name.startswith(".") or p.suffix.lower() not in exts:
+            continue
+        rel = p.relative_to(folder).parts[:-1]
+        if any(part.startswith(".") for part in rel):
+            continue
+        upper = [x.upper() for x in rel]
+        if "SUB" in upper and "M4ROOT" in upper:
             continue
         if skip and (skip == p.parent.resolve() or skip in p.resolve().parents):
             continue
-        key = p.stem.lower()
-        if key in found:
-            log(f"  warning: two files named '{p.stem}' - using {found[key]}, ignoring {p}")
-            continue
-        found[key] = p
+        found.append(p)
     return found
 
 
@@ -123,7 +126,34 @@ def find_media(folder: Path, exts: set, recursive: bool, skip_dir: Path = None, 
 # Offset detection
 # --------------------------------------------------------------------------- #
 
-def find_offset(external: np.ndarray, camera: np.ndarray):
+def _gcc(E, n_ext, cam, nfft, rate):
+    """GCC-PHAT between a precomputed external spectrum E and a camera snippet."""
+    cam = cam.astype(np.float64)
+    C = np.fft.rfft(cam - cam.mean(), nfft)
+    cross = E * np.conj(C)
+    cross /= np.abs(cross) + 1e-12  # PHAT weighting: sharp peak, mic-independent
+    corr = np.fft.irfft(cross, nfft)
+
+    # Valid lags: -(len(cam)-1) .. n_ext-1. Negative lags live at the end.
+    n_cam = len(cam)
+    lags = np.concatenate([np.arange(0, n_ext), np.arange(-(n_cam - 1), 0)])
+    values = np.abs(np.concatenate([corr[:n_ext], corr[nfft - (n_cam - 1):]]))
+
+    best = int(np.argmax(values))
+    peak = values[best]
+    # Second-best peak at least 0.25 s away from the winner.
+    guard = int(0.25 * rate)
+    values[max(0, best - guard): best + guard + 1] = 0
+    runner_up = values.max() if values.size else 0.0
+    confidence = float(peak / runner_up) if runner_up > 0 else float("inf")
+    return lags[best] / rate, confidence
+
+
+def _nfft(n):
+    return 1 << (n - 1).bit_length()
+
+
+def find_offset(external: np.ndarray, camera: np.ndarray, rate=ANALYSIS_RATE):
     """
     Return (offset_seconds, confidence).
 
@@ -135,32 +165,56 @@ def find_offset(external: np.ndarray, camera: np.ndarray):
     confidence is the height of the best correlation peak divided by the next
     best peak elsewhere. ~1 means no clear match; a real match is usually > 3.
     """
-    ext = external - external.mean()
-    cam = camera - camera.mean()
-    n = len(ext) + len(cam)
-    nfft = 1 << (n - 1).bit_length()
+    nfft = _nfft(len(external) + len(camera))
+    ext = external.astype(np.float64)
+    E = np.fft.rfft(ext - ext.mean(), nfft)
+    return _gcc(E, len(external), camera, nfft, rate)
 
-    E = np.fft.rfft(ext, nfft)
-    C = np.fft.rfft(cam, nfft)
-    cross = E * np.conj(C)
-    cross /= np.abs(cross) + 1e-12  # PHAT weighting: sharp peak, mic-independent
-    corr = np.fft.irfft(cross, nfft)
 
-    # Valid lags: -(len(cam)-1) .. len(ext)-1. Negative lags live at the end.
-    lags = np.concatenate([np.arange(0, len(ext)), np.arange(-(len(cam) - 1), 0)])
-    values = np.abs(np.concatenate([corr[:len(ext)], corr[nfft - (len(cam) - 1):]]))
+# --------------------------------------------------------------------------- #
+# Matching clips to audio files
+# --------------------------------------------------------------------------- #
 
-    best = int(np.argmax(values))
-    peak = values[best]
+MATCH_RATE = 4000      # coarser rate is plenty to tell which file is which
+MATCH_SECONDS = 120    # listen to this much of each clip when matching
 
-    # Second-best peak at least 0.25 s away from the winner.
-    guard = int(0.25 * ANALYSIS_RATE)
-    masked = values.copy()
-    masked[max(0, best - guard): best + guard + 1] = 0
-    runner_up = masked.max() if masked.size else 0.0
-    confidence = float(peak / runner_up) if runner_up > 0 else float("inf")
 
-    return lags[best] / ANALYSIS_RATE, confidence
+def match_by_listening(ffmpeg, videos, audios, min_confidence, log, should_stop):
+    """For each video, find the audio file whose sound best matches it.
+    Returns {video: (audio, confidence)} for the ones that matched."""
+    snippets = {}
+    log(f"\nMatching {len(videos)} clip(s) to {len(audios)} audio file(s) by listening...")
+    for v in videos:
+        try:
+            x = load_audio(ffmpeg, v, MATCH_SECONDS, MATCH_RATE)
+            if len(x) >= MATCH_RATE:
+                snippets[v] = x
+        except Exception:
+            pass  # reported later when the clip is processed
+    if not snippets:
+        return {}
+
+    best = {v: (None, 0.0) for v in snippets}
+    longest = max(len(x) for x in snippets.values())
+    for i, a in enumerate(audios, 1):
+        if should_stop():
+            break
+        log(f"  listening to {a.name} ({i}/{len(audios)})")
+        try:
+            ext = load_audio(ffmpeg, a, None, MATCH_RATE)
+        except Exception as e:
+            log(f"  ! could not read {a.name}: {e}")
+            continue
+        if len(ext) < MATCH_RATE:
+            continue
+        nfft = _nfft(len(ext) + longest)
+        ext = ext.astype(np.float64)
+        E = np.fft.rfft(ext - ext.mean(), nfft)
+        for v, cam in snippets.items():
+            _, conf = _gcc(E, len(ext), cam, nfft, MATCH_RATE)
+            if conf > best[v][1]:
+                best[v] = (a, conf)
+    return {v: m for v, m in best.items() if m[0] is not None and m[1] >= min_confidence}
 
 
 # --------------------------------------------------------------------------- #
@@ -219,45 +273,77 @@ def sync_folders(video_dir, audio_dir, output_dir, recursive=True, container="sa
     video_dir, audio_dir, output_dir = Path(video_dir), Path(audio_dir), Path(output_dir)
     ffmpeg = ffmpeg_exe()
 
-    videos = find_media(video_dir, VIDEO_EXTS, recursive, output_dir, log)
-    audios = find_media(audio_dir, AUDIO_EXTS, recursive, output_dir, log)
-    pairs = [(videos[k], audios[k]) for k in videos if k in audios]
-
-    log(f"Found {len(videos)} videos, {len(audios)} audio files, {len(pairs)} matching pairs.")
-    unmatched_v = sorted(videos.keys() - audios.keys())
-    unmatched_a = sorted(audios.keys() - videos.keys())
-    if unmatched_v:
-        log("  videos with no matching audio: " + ", ".join(videos[k].name for k in unmatched_v))
-    if unmatched_a:
-        log("  audio with no matching video: " + ", ".join(audios[k].name for k in unmatched_a))
-    if not pairs:
-        log("Nothing to do. Audio and video files need the same name, e.g. A001.mov and A001.wav.")
+    videos = list_media(video_dir, VIDEO_EXTS, recursive, output_dir)
+    audios = list_media(audio_dir, AUDIO_EXTS, recursive, output_dir)
+    log(f"Found {len(videos)} video clip(s) and {len(audios)} audio file(s).")
+    if not videos or not audios:
+        log("Nothing to do: need at least one video and one audio file.")
         return 0, 0, None
+
+    def out_path(v):
+        ext_name = v.suffix if container == "same" else "." + container
+        sub = v.relative_to(video_dir).parent  # keep card folders (A001, A002...) apart
+        return output_dir / sub / f"{v.stem}_synced{ext_name}"
+
+    # 1) Same name -> pair directly (only when the name is unambiguous).
+    by_stem = {}
+    for a in audios:
+        by_stem.setdefault(a.stem.lower(), []).append(a)
+    pairs, by_name, unnamed = [], 0, []
+    for v in videos:
+        if out_path(v).exists() and not overwrite and not dry_run:
+            pairs.append((v, None, "already done"))
+            continue
+        cands = by_stem.get(v.stem.lower(), [])
+        if len(cands) == 1:
+            pairs.append((v, cands[0], "name"))
+            by_name += 1
+        else:
+            unnamed.append(v)
+    if by_name:
+        log(f"  {by_name} clip(s) paired by file name.")
+
+    # 2) Everything else -> work out which audio file it is by listening.
+    if unnamed:
+        found = match_by_listening(ffmpeg, unnamed, audios, min_confidence, log, should_stop)
+        for v in unnamed:
+            if v in found:
+                a, conf = found[v]
+                log(f"  {v.relative_to(video_dir)}  ->  {a.name}  (match strength {conf:.1f})")
+                pairs.append((v, a, "listening"))
+            else:
+                pairs.append((v, None, "no match"))
+    pairs.sort(key=lambda t: str(t[0]))
 
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / "sync_report.csv"
     rows, ok, failures = [], 0, 0
 
-    for i, (video, audio) in enumerate(pairs, 1):
+    for i, (video, audio, how) in enumerate(pairs, 1):
         if should_stop():
             log("\nStopped.")
             break
         if progress:
             progress(i - 1, len(pairs))
-        log(f"\n[{i}/{len(pairs)}] {video.name}  +  {audio.name}")
-        row = {"video": str(video), "audio": str(audio), "offset_seconds": "",
-               "confidence": "", "status": "", "output": ""}
+        name = str(video.relative_to(video_dir))
+        out = out_path(video)
+        row = {"video": str(video), "audio": str(audio or ""), "matched_by": how,
+               "offset_seconds": "", "confidence": "", "status": "", "output": ""}
+        if how == "already done":
+            log(f"\n[{i}/{len(pairs)}] {name}: already done")
+            row.update(status="already done", output=str(out))
+            ok += 1
+            rows.append(row)
+            continue
+        if audio is None:
+            log(f"\n[{i}/{len(pairs)}] {name}")
+            log("  ! no audio file matched this clip - skipped")
+            row["status"] = "skipped: no matching audio"
+            failures += 1
+            rows.append(row)
+            continue
+        log(f"\n[{i}/{len(pairs)}] {name}  +  {audio.name}")
         try:
-            ext_name = video.suffix if container == "same" else "." + container
-            out = output_dir / f"{video.stem}_synced{ext_name}"
-            if out.exists() and not overwrite and not dry_run:
-                row["status"] = "already done"
-                row["output"] = str(out)
-                log(f"  already done ({out.name})")
-                ok += 1
-                rows.append(row)
-                continue
-
             video_dur, has_audio = probe(ffmpeg, video)
             if not has_audio:
                 raise RuntimeError("this video has no sound on it, so there's nothing to sync against")
@@ -283,6 +369,7 @@ def sync_folders(video_dir, audio_dir, output_dir, recursive=True, container="sa
                 ok += 1
             else:
                 log("  writing merged file...")
+                out.parent.mkdir(parents=True, exist_ok=True)
                 merge(ffmpeg, video, audio, out, offset, video_dur, keep_camera_audio)
                 row["status"] = "ok"
                 row["output"] = str(out)

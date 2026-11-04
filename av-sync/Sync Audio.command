@@ -48,14 +48,14 @@ pick() {  # pick "prompt" "start folder"  -> prints chosen POSIX path, empty if 
 }
 
 echo "Choose your video folder in the window that just opened..."
-VIDEO="$(pick "Choose the folder with your VIDEO clips" "$LAST")"
+VIDEO="$(pick "Choose the folder for one shoot day (the one with A001, A002, SOUND inside)" "$LAST")"
 [ -z "$VIDEO" ] && { echo "Cancelled."; exit 0; }
 VIDEO="${VIDEO%/}"
 echo "$VIDEO" > "$SUPPORT/last_folder"
 
-ANSWER="$(osascript -e 'button returned of (display dialog "Are the audio files in the same folder as the videos?" buttons {"No, choose audio folder", "Yes, same folder"} default button 2 with title "Audio Sync")' 2>/dev/null)"
+ANSWER="$(osascript -e 'button returned of (display dialog "Is the audio inside that folder too? (for example in a SOUND folder next to A001, A002)" buttons {"No, choose audio folder", "Yes"} default button 2 with title "Audio Sync")' 2>/dev/null)"
 [ -z "$ANSWER" ] && { echo "Cancelled."; exit 0; }
-if [ "$ANSWER" = "Yes, same folder" ]; then
+if [ "$ANSWER" = "Yes" ]; then
   AUDIO="$VIDEO"
 else
   AUDIO="$(pick "Choose the folder with your AUDIO files" "$VIDEO")"
@@ -78,7 +78,7 @@ LOG="$SUPPORT/last_run.log"
 SUMMARY="$(grep '^Finished:' "$LOG" | tail -1)"
 if [ -z "$SUMMARY" ]; then
   if grep -q "Nothing to do" "$LOG"; then
-    alert "No matching audio and video files were found.\n\nFiles need the same name, for example A001.mov and A001.wav."
+    alert "Couldn't find both video clips and audio files in that folder.\n\nPick the folder that contains the camera folders and the SOUND folder."
   else
     alert "Something went wrong. The details are in the Terminal window - send a screenshot of it."
   fi
