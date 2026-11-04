@@ -1,71 +1,58 @@
-# avsync
+# Audio Sync
 
-Automatically sync separately recorded audio to video clips, then write merged files. It runs on your own computer against the drive the footage is on, so nothing is uploaded.
+Lines up your separately recorded audio with your video clips and saves new, merged video files. It runs on your own computer, straight off your external drive, so nothing gets uploaded.
 
-Files are paired by name: `A001.mov` goes with `A001.wav`. Case doesn't matter, and the audio can be in a different folder or the same one.
+Files are paired by name: `A001.mov` goes with `A001.wav`.
 
-## What it does to each pair
+## How to use it
 
-1. Listens to the camera's scratch audio (by default the first 5 minutes). Only audio is read; video is never decoded.
-2. Finds the offset to the external recording by cross-correlation.
-3. Writes `<name>_synced.<ext>` with:
-   - the **original video stream copied untouched** (no re-encode, no quality loss, fast),
-   - **track 1:** the external audio, trimmed or delayed so it lines up and is exactly as long as the clip,
-   - **track 2:** the original camera audio (use `--drop-camera-audio` to leave it out).
-4. Writes `sync_report.csv` with each clip's offset, confidence and result.
+### First time only
 
-Clips whose match is weak (wrong file pairing, no shared sound, a silent camera track) are **skipped and listed** rather than merged badly.
+1. Unzip the `av-sync` folder anywhere (Desktop is fine).
+2. **Mac:** double-click **`Sync Audio.command`**.
+   **Windows:** double-click **`Sync Audio.bat`**.
+3. If your Mac says it **can't verify the developer**: click **Done**, open **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to "Sync Audio.command", and confirm. You only do this once.
+   (On Windows, if a blue "Windows protected your PC" box appears, click **More info → Run anyway**.)
+4. If you don't have Python, it opens the download page for you. Install it, then double-click **Sync Audio** again.
+5. The first launch spends about a minute installing what it needs. After that it opens straight away.
 
-## Setup (once)
+### Every time
 
-**Mac**
+1. Double-click **Sync Audio**. A window opens.
+2. **Video folder → Choose...** and pick the folder on your external drive with the clips.
+3. **Audio folder:** leave it empty if the audio files are in the same folder. Otherwise choose their folder.
+4. **Save to:** leave it empty and a `Synced` folder is made inside your video folder.
+5. Press **Sync**. When it says *All done*, click **Open synced folder**.
+
+The window remembers your folders, so next time you just press **Sync**. Clips that are already done are skipped, so after adding new footage you can simply run it again.
+
+## What you get
+
+`A001_synced.mov` for each clip:
+- the **original video, untouched** (copied, not re-encoded, so no quality loss, and it's fast),
+- **audio track 1:** your external audio, lined up and trimmed to the clip,
+- **audio track 2:** the camera's own sound (untick the box if you don't want it).
+
+Your original files are never changed. Each merged file is about the same size as the original, so make sure the drive has room.
+
+There is also a `sync_report.csv` with the offset found for every clip.
+
+## If a clip says "weak match"
+
+The program couldn't hear the same sound on both files, so it skipped the clip rather than guess. Usually this means:
+- the two files don't actually belong together (check the names), or
+- the camera's sound is silent or very quiet.
+
+## Good to know
+
+- The audio recorder can start before or after the camera. Both cases work.
+- Every clip needs *some* sound recorded on the camera, because that's what the program listens to.
+- On very long takes (30+ minutes) the camera and recorder clocks can drift apart by about a frame. Spot-check the end of your longest clips.
+
+## Command line (optional)
+
 ```bash
-brew install ffmpeg
-```
-```bash
-pip3 install numpy
+python3 avsync.py VIDEO_FOLDER AUDIO_FOLDER OUTPUT_FOLDER -r --container mov
 ```
 
-**Windows**
-```bash
-winget install ffmpeg
-```
-```bash
-pip install numpy
-```
-
-## Run
-
-Try a dry run first. It only prints the offsets:
-
-```bash
-python3 avsync.py "/Volumes/MyDrive/Footage" "/Volumes/MyDrive/Audio" "/Volumes/MyDrive/Synced" --dry-run
-```
-
-Then do it for real:
-
-```bash
-python3 avsync.py "/Volumes/MyDrive/Footage" "/Volumes/MyDrive/Audio" "/Volumes/MyDrive/Synced"
-```
-
-On Windows the paths look like `"E:\Footage"`.
-
-Write the output to the same external drive. That way the merged files are written alongside the originals instead of being copied across drives.
-
-### Options
-
-| Option | What it does |
-| --- | --- |
-| `-r`, `--recursive` | Also search subfolders (e.g. card folders like `CARD01/`). |
-| `--container mov` | Output format. The default `same` keeps each clip's extension. `.mp4` outputs get AAC 320k audio; everything else gets lossless 24-bit PCM. `mov` is the best choice for Premiere if you want lossless audio from mp4 sources. |
-| `--analyze-seconds 300` | How much of each camera clip to listen to. Raise it if a clip starts with a long silence. |
-| `--min-confidence 2.5` | Matches weaker than this are skipped. A real match is usually 10 or higher. |
-| `--drop-camera-audio` | Only keep the synced external audio. |
-| `--overwrite` | Replace existing `_synced` files (otherwise they're skipped, so you can safely re-run after adding more clips). |
-
-## Notes
-
-- The external recording can start before or after the camera; both cases are handled.
-- **Drift:** the script finds one offset per clip. Very long takes (30+ minutes) on cameras and recorders with unlocked clocks can slowly drift apart by a frame or so. Check the end of your longest clips.
-- Each clip needs *some* audio on the camera for this to work.
-- Disk space: each merged file is about the same size as the original video.
+Add `--dry-run` to only print the offsets, or `--help` to list every option.
