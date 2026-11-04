@@ -23,3 +23,7 @@ How the tracing works (all in the browser, nothing is uploaded): the photo is sh
 The model is about 17 MB and downloads once; the service worker keeps it for later visits. Tracing takes a few seconds on a phone.
 
 Everything is plain HTML/CSS/JS with no build step.
+
+## avsync
+
+`av-sync/` holds a separate command-line tool that syncs external audio recordings to video clips with matching names and writes merged files. See [`av-sync/README.md`](av-sync/README.md).
