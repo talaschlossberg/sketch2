@@ -88,6 +88,7 @@ function closeStatus() {
 }
 
 function setup() {
+  window.focus(); // inside Tala Games the page sits in a frame: take the arrow keys straight away
   createCanvas(worldWidth(), worldHeight());
   sizeGuy();
   loadFrames();
