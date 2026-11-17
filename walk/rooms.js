@@ -28,8 +28,8 @@ function makeRoom(kind, name, mapAt) {
     floor: PRESETS[kind].floor,
     lines: [],
     doors: [],
-    images: [], // photos placed in the world: { x, y, w, h, art }
-    fills: [], // colour filled into shapes: { x, y, w, h, art, colour }
+    images: [], // photos older worlds placed: { x, y, w, h, art }
+    fills: [], // colour older worlds filled into shapes: { x, y, w, h, art, colour }
     history: [],
     ink: null,
     thumb: null,
@@ -232,125 +232,13 @@ function inkDoor(g, d) {
 
 function doorNear() {
   if (!guy.onGround || trip) return null;
-  return doorsHere().find((d) => abs(guy.x - d.x) < doorSize(d).w * 0.35 && abs(guy.y - d.y) < 12) || portalNear();
-}
-
-// ---- portals: a photo or a drawing switched on to lead somewhere, like a door ----
-
-// everything in a place that leads somewhere: its doors and its portals
-function exitsOf(r) {
-  return [...r.doors, ...r.images.filter((f) => f.portal), ...r.lines.filter((l) => l.portal)];
-}
-
-// the box a portal covers; null for a door
-function portalBox(p) {
-  if (Array.isArray(p)) {
-    let xs = p.map((q) => q.x);
-    let ys = p.map((q) => q.y);
-    return { x: min(xs), y: min(ys), w: max(xs) - min(xs), h: max(ys) - min(ys) };
-  }
-  if (p.w === undefined) return null;
-  if (p.hot) return { x: p.x + p.hot.x0 * p.w, y: p.y + p.hot.y0 * p.h, w: (p.hot.x1 - p.hot.x0) * p.w, h: (p.hot.y1 - p.hot.y0) * p.h };
-  return { x: p.x, y: p.y, w: p.w, h: p.h };
-}
-
-// she's at a portal when she stands in front of it: across its width, and it reaches down to her
-function portalNear() {
-  let r = room();
-  return [...r.images, ...r.lines].reverse().find((p) => {
-    if (!p.portal) return false;
-    let b = portalBox(p);
-    return guy.x > b.x - 6 && guy.x < b.x + b.w + 6 && guy.y > b.y - 4 && guy.y - GUY_HEIGHT < b.y + b.h + 12;
-  }) || null;
-}
-
-// where she comes out of a portal: under its middle, on whatever is below
-function portalArrival(p) {
-  let b = portalBox(p);
-  let x = b.x + b.w / 2;
-  let y = groundBelow(x, b.y + b.h / 2);
-  return { x, y: y == null ? floorY() : y };
-}
-
-// what the portal tool would act on: a photo or a drawing, not a door
-function portalTarget(x, y) {
-  let hit = itemAt(x, y);
-  return hit && hit.kind != "door" ? hit.item : null;
-}
-
-function portalClick(x, y) {
-  let it = portalTarget(x, y);
-  if (!it) return showStatus("Click a photo or a drawing to make it a portal.", 3000);
-  togglePortal(it);
-  if (!it.portal) showStatus("That's plain again.", 2000);
-}
-
-// with the portal tool out, every portal shows a dashed outline, and what's under the mouse is lit
-function drawPortalMarks() {
-  if (tool != "portal" || mapOpen) return;
-  let r = room();
-  let over = portalTarget(mouseX, mouseY);
-  push();
-  noFill();
-  strokeWeight(2);
-  for (let p of [...r.images, ...r.lines]) {
-    if (!p.portal && p != over) continue;
-    let b = portalBox(p);
-    stroke(193, 68, 42, p == over ? 255 : 170);
-    drawingContext.setLineDash(p.portal ? [7, 5] : []);
-    rect(b.x - 6, b.y - 6, b.w + 12, b.h + 12, 4);
-    if (p.portal) {
-      let to = roomById(p.to);
-      noStroke();
-      fill(193, 68, 42);
-      textFont(MONO);
-      textSize(11);
-      textAlign(LEFT, BOTTOM);
-      text(to ? "To " + to.name : "Leads nowhere yet", b.x - 6, b.y - 10);
-      noFill();
-    }
-  }
-  drawingContext.setLineDash([]);
-  pop();
-}
-
-// the bar's Portal switch, shown while a photo or a drawing is selected
-function syncPortalButton() {
-  let it = tool == "select" && selected && stillHere(selected) && selected.kind != "door" ? selected.item : null;
-  let to = it && it.portal && roomById(it.to);
-  let label = !it ? "" : !it.portal ? "Off" : to ? "To " + to.name : "On";
-  if (label == syncPortalButton.last) return;
-  syncPortalButton.last = label;
-  let button = document.getElementById("portalButton");
-  button.hidden = !it;
-  button.classList.toggle("on", !!(it && it.portal));
-  document.getElementById("portalLabel").textContent = label;
-}
-
-function togglePortal(it) {
-  if (!it) {
-    if (!selected || selected.kind == "door") return;
-    it = selected.item;
-  }
-  pushUndo();
-  if (it.portal) {
-    it.portal = false;
-    it.to = null;
-  } else {
-    it.portal = true;
-    it.to = null;
-    pendingDoor = it;
-    askWhereDoorGoes("Where does this portal go?");
-  }
-  syncPortalButton.last = null;
-  inkDirty = true;
-  saveWorld();
+  return doorsHere().find((d) => abs(guy.x - d.x) < doorSize(d).w * 0.35 && abs(guy.y - d.y) < 12) || null;
 }
 
 function goThrough(door) {
   if (!door.to || !roomById(door.to)) {
     pendingDoor = door;
-    askWhereDoorGoes(portalBox(door) ? "This portal doesn't lead anywhere yet. Where should it go?" : "This door doesn't lead anywhere yet. Where should it go?");
+    askWhereDoorGoes("This door doesn't lead anywhere yet. Where should it go?");
     return;
   }
   snapshotRoom(); // before the door opens, while the room looks itself
@@ -359,7 +247,7 @@ function goThrough(door) {
 
 // the door swinging open, drawn behind her so she steps into the doorway
 function drawOpening() {
-  if (!trip || portalBox(trip.door)) return; // a portal has no door to open: she just fades through
+  if (!trip) return;
   let d = trip.door;
   let { w, h } = doorSize(d);
   if (!trip.switched && doorPhoto) {
@@ -423,13 +311,12 @@ function enterWorld() {
 }
 
 function enterRoom(i, fromId) {
-  selected = null;
   roomIndex = i;
   settle(room());
   lines = room().lines;
   inkDirty = true;
-  let back = exitsOf(room()).find((d) => d.to == fromId) || (fromId == null && room().doors[0]);
-  let arrive = back ? (portalBox(back) ? portalArrival(back) : back) : { x: 120, y: floorY() };
+  let back = room().doors.find((d) => d.to == fromId) || (fromId == null && room().doors[0]);
+  let arrive = back || { x: 120, y: floorY() };
   guy.x = constrain(arrive.x, 20, width - 20);
   guy.y = arrive.y;
   guy.vy = 0;
@@ -444,10 +331,8 @@ function enterRoom(i, fromId) {
 function drawDoorHint() {
   let d = doorNear();
   if (!d) return;
-  let b = portalBox(d);
-  let x = b ? b.x + b.w / 2 : d.x;
-  let top = b ? b.y : d.y - doorSize(d).h;
-  let y = max(top - 18, 40) + sin(frameCount * 0.1) * 3;
+  let x = d.x;
+  let y = max(d.y - doorSize(d).h - 18, 40) + sin(frameCount * 0.1) * 3;
   stroke(inkHere());
   strokeWeight(2.5);
   noFill();
@@ -495,8 +380,8 @@ function linkToNewRoom(kind) {
 
 function linkDoor(door, target) {
   door.to = target.id;
-  let home = rooms.find((r) => exitsOf(r).includes(door));
-  if (home && !exitsOf(target).some((d) => d.to == home.id)) {
+  let home = rooms.find((r) => r.doors.includes(door));
+  if (home && !target.doors.some((d) => d.to == home.id)) {
     let x = max(width * 0.1, doorSize().w / 2 + 12) + target.doors.length * doorSize().w * 1.4;
     target.doors.push({ x, y: groundOf(target), floor: true, seed: random(1000), to: home.id });
     target.ink = null;
@@ -539,9 +424,9 @@ function saveWorld() {
       count: roomCount,
       rooms: rooms.map((r) => ({
         id: r.id, name: r.name, kind: r.kind, wall: r.wall, floor: r.floor, skyPhoto: r.skyPhoto, floorPhoto: r.floorPhoto, map: r.map, thumb: r.thumb, doors: r.doors,
-        images: r.images.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, portal: f.portal, to: f.to, addon: f.addon, hot: f.hot })),
+        images: r.images.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art })),
         fills: r.fills.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, art: f.art, colour: f.colour })),
-        lines: r.lines.map((l) => ({ seed: l.seed, colour: l.colour, sharp: l.sharp, portal: l.portal, to: l.to, pts: l.map((p) => [round(p.x), round(p.y)]) })),
+        lines: r.lines.map((l) => ({ seed: l.seed, colour: l.colour, sharp: l.sharp, pts: l.map((p) => [round(p.x), round(p.y)]) })),
       })),
     };
     try {
@@ -604,7 +489,7 @@ function useWorld(world) {
     fills: r.fills || [],
     history: [],
     ink: null,
-    lines: r.lines.map((l) => Object.assign(seeded(l.pts.map(([x, y]) => ({ x, y })), l.seed), l.colour ? { colour: l.colour } : {}, l.sharp ? { sharp: true } : {}, l.portal ? { portal: true, to: l.to || null } : {})),
+    lines: r.lines.map((l) => Object.assign(seeded(l.pts.map(([x, y]) => ({ x, y })), l.seed), l.colour ? { colour: l.colour } : {}, l.sharp ? { sharp: true } : {})),
   }));
   roomCount = world.count || rooms.length;
   roomIndex = max(0, rooms.findIndex((r) => r.id == world.at));

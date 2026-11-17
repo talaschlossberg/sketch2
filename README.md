@@ -29,28 +29,21 @@ Everything is plain HTML/CSS/JS with no build step.
 
 Open `walk/index.html` on a web server. She walks on the lines you draw: the arrow keys walk, up jumps or goes through a door, and M opens the map. On a phone, arrows appear on screen.
 
-**Tools** (the rail down the left):
+**Two tools** (the rail down the left):
 
-- **Select**: drag a line, door or photo to move it; drag the corner square, press + and -, or scroll over it to resize. Doors settle onto the line below.
-- **Pencil**: draw lines, in pen with a slight wobble.
-- **Path**: click point to point for straight lines; double-click or press Enter to finish.
-- **Fill**: click inside a shape you've drawn to fill it with one of nine colours, like gouache under the ink. Lines, the floor, doors and photos all count as edges; a space that isn't closed in can't be filled. Filling a filled shape changes its colour.
-- **Eraser**: drag over lines to rub out just the parts you touch; click a door, photo or fill to take it away.
-- **Photo**: drag a box and choose a photo; it keeps its shape inside the box.
+- **Pen**: draw lines, in pen with a slight wobble. Open lines are ground she walks on and walls she stops at.
 - **Door**: click on a line to put up a real door (cut from a film photo, `walk/doors/door.jpg`), then choose where it goes: a new outside (blue on grass), a new furnished room (on boards), a new empty room (plaster on boards), or a place picked on the map. New places come with a door back.
 
 **Every page is a world**: a wall and a floor, chosen from the bar's **Wall** and **Floor** pickers (each option shows a little preview). Walls: Blue, Clouds (drifting), Sunset, Night (lines drawn in white), Your photo (a photo of your own for that page, with **Change photo**; a film sunset until you choose one), Plaster, and Room (furnished: a window onto the last sky picked, a picture of the outside, a lamp, a table and chair she can jump onto, a plant). Floors: Grass, Sand, Boards, Tiles, Concrete and Clay, painted in perspective from a horizon with the texture finer toward it; Your photo (a photo of your own laid as the ground, squeezed toward the horizon, with **Change floor photo**); or Line, the plain drawn ground. On a painted floor she walks low on the page, the floor stretching away behind her to the horizon, with a soft shadow under her that shrinks and fades as she jumps (`walk/world.js`).
 
-**Shapes are things**: a closed shape (a line that ends where it began) and any portal stand in the world the way a door does: she walks in front of them instead of bumping into them, and can jump up onto their flat tops. Open lines are still the ground and the walls she climbs or stops at. She is about 30% of the window's height, up to 215px (`sizeGuy` in `walk/sketch.js`).
+**Shapes are things**: a closed shape (a line that ends where it began) stands in the world the way a door does: she walks in front of it instead of bumping into it, and can jump up onto its flat top. She is about 30% of the window's height, up to 215px (`sizeGuy` in `walk/sketch.js`).
 
-**Add-ons**: ready-made things from the house button at the bottom of the rail. Right now there's one, a **House** (`walk/things/house.webp`, cut out from Tala's picture). Click the ground and it stands there, as tall as fits the window. Its door is a portal: placing it asks where the door goes, and she goes in by standing at the door and pressing up. It's a photo like any other, so it moves, resizes and erases the same way. Add more by adding an entry to `ADDONS` in `walk/images.js`, a picture plus the part of it that is the door.
-
-**Portals**: anything you add, a photo or a drawing, can lead somewhere. Pick the **Portal** tool (the oval at the bottom of the rail) and click it; it asks where it goes, like a door (a new room, a new outside, or a page picked on the map). She goes through by standing in front of it and pressing up; the page on the other side gets a door back, and coming back she steps out under the portal. With the Portal tool out, every portal shows a dashed red outline and where it leads; click one again to make it plain. The same switch is in the bar while something is selected. The map counts doors and portals together as ways out (`walk/rooms.js`).
-
-**The bar** across the top: the place's name; **Wall** and **Floor**; **Map** (every place as a card with a snapshot and its links; drag, rename, visit, link loose doors, add or delete places); **Undo**; **Clear** (lines and fills; doors and photos stay); and **?** for the keys.
+**The bar** across the top: the place's name; **Wall** and **Floor**; **Map** (every place as a card with a snapshot and its links; drag, rename, visit, link loose doors, add or delete places); **Undo**; **Clear** (the lines; doors stay); and **?** for the keys.
 
 The walker is `walk/frames/walk01.png` to `walk22.png`, from a filmed walk cycle; `walk/frames/make_frames.py` makes them (the loop's head jolt taken out, detail brought out in her dark clothes). The frames advance with the distance she covers, so her feet don't slide, and she leans to sit flat on slopes.
 
 Everything is saved in the browser (IndexedDB). Type and colour follow PMT and Tala Games: monospace on paper, small spaced capitals, red for what's live.
 
-Code: `sketch.js` (walking, drawing, the loop), `world.js` (walls, floors, the shadow), `rooms.js` (rooms, doors, saving), `map.js`, `sky.js` (the painted skies, your photo), `tools.js` (the rail, the eraser), `make.js` (path, select), `fill.js`, `images.js`, `frames.js` (preparing the walk frames).
+Worlds made before the tools were cut down to two still open: their photos and fills are still drawn, and their portals are plain pictures now.
+
+Code: `sketch.js` (walking, drawing, the loop), `world.js` (walls, floors, the shadow), `rooms.js` (rooms, doors, saving), `map.js`, `sky.js` (the painted skies, your photo), `tools.js` (the rail, undo), `images.js` (loading and drawing pictures), `frames.js` (preparing the walk frames).

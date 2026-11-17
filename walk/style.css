@@ -101,13 +101,6 @@ button:focus-visible {
   z-index: 5;
 }
 
-#rail hr {
-  width: 70%;
-  margin: 4px 0;
-  border: 0;
-  border-top: 1px solid var(--hair);
-}
-
 #rail > button {
   width: 40px;
   height: 40px;
@@ -126,74 +119,6 @@ button:focus-visible {
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-#rail svg .drop {
-  fill: var(--fill, var(--red));
-  stroke: none;
-}
-
-#addonPicker {
-  position: fixed;
-  left: calc(var(--rail) + 6px);
-  padding: 8px;
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: 12px;
-  display: flex;
-  gap: 6px;
-  z-index: 6;
-}
-
-#addonPicker button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-  width: 96px;
-  height: auto;
-  border-radius: 8px;
-}
-
-#addonPicker button.on {
-  border-color: var(--red);
-}
-
-#addonPicker img {
-  width: 80px;
-  height: auto;
-}
-
-#fillPicker {
-  position: fixed;
-  left: calc(var(--rail) + 6px);
-  padding: 8px;
-  background: var(--raised);
-  border: 1px solid var(--hair);
-  border-radius: 12px;
-  display: grid;
-  grid-template-columns: repeat(3, 32px);
-  gap: 6px;
-  z-index: 6;
-}
-
-.swatch {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--hair);
-  background: var(--swatch);
-}
-
-.swatch:hover {
-  border-color: var(--ink);
-}
-
-.swatch.on {
-  background: var(--swatch);
-  box-shadow: 0 0 0 2px var(--raised), 0 0 0 4px var(--ink);
 }
 
 /* ---- the bar across the top ---- */
@@ -568,17 +493,6 @@ button:focus-visible {
 
 /* ---- cursors for the tools ---- */
 
-body.erasing canvas {
-  cursor: none;
-}
-
-body[data-using="path"] canvas,
-body[data-using="fill"] canvas,
-body[data-using="image"] canvas,
 body[data-using="door"] canvas {
   cursor: crosshair;
-}
-
-.portal-button.on #portalLabel {
-  color: var(--paper);
 }

@@ -97,9 +97,6 @@ function setup() {
   hookMap();
   loadSky();
   loadDoorPhoto();
-  hookImages();
-  hookFill();
-  hookMake();
   hookTools();
   hookWorld();
 }
@@ -112,17 +109,10 @@ function draw() {
 
   drawDoorHint();
   if (!trip && !mapOpen && !typing()) moveGuy();
-  drawImageDraft();
-  drawDrafts();
   drawOpening();
   drawShadow();
   drawGuy();
   drawTrip();
-  drawEraserCursor();
-  drawSelection();
-  drawSelectHover();
-  syncPortalButton();
-  drawPortalMarks();
   showRoomName();
 }
 
@@ -218,15 +208,18 @@ function wallAt(x) {
   return y != null && y < guy.y - STEP_UP;
 }
 
-// a closed shape (it ends where it began) or a portal is a thing standing in the world:
+// a closed shape (it ends where it began) is a thing standing in the world:
 // she walks in front of it, as she does a door, and can only land on its flat parts
 function passThrough(l) {
-  if (l.platform || l.portal) return true;
+  if (l.platform) return true;
   if (l.length < 4) return false;
   let a = l[0];
   let z = l[l.length - 1];
-  let b = portalBox(l);
-  return b.w > 20 && b.h > 20 && dist(a.x, a.y, z.x, z.y) < max(24, min(b.w, b.h) * 0.25);
+  let xs = l.map((p) => p.x);
+  let ys = l.map((p) => p.y);
+  let w = max(xs) - min(xs);
+  let h = max(ys) - min(ys);
+  return w > 20 && h > 20 && dist(a.x, a.y, z.x, z.y) < max(24, min(w, h) * 0.25);
 }
 
 // highest line at x that is at or below fromY
@@ -317,19 +310,7 @@ function resetLines() {
 
 function mousePressed(e) {
   if (e && e.target && e.target != drawingContext.canvas) return; // buttons and the map
-  document.getElementById("fillPicker").hidden = true;
-  document.getElementById("addonPicker").hidden = true;
-  // a photo still waiting for its picture: click it to choose one
-  let empty = imageAt(mouseX, mouseY);
-  if (empty && !empty.art && tool != "erase" && tool != "select") return choosePhotoFor(empty);
   if (placingDoor) return placeDoor(mouseX, mouseY);
-  if (tool == "image") return startImage(mouseX, mouseY);
-  if (tool == "erase") return eraseStart(mouseX, mouseY);
-  if (tool == "select") return startMove(mouseX, mouseY);
-  if (tool == "portal") return portalClick(mouseX, mouseY);
-  if (tool == "addon") return placeAddon(mouseX, mouseY);
-  if (tool == "path") return pathClick(mouseX, mouseY);
-  if (tool == "fill") return fillAt(mouseX, mouseY);
   if (tool != "draw") return;
   drawing = [{ x: mouseX, y: mouseY }];
   drawing.seed = random(1000);
@@ -338,23 +319,6 @@ function mousePressed(e) {
 }
 
 function mouseDragged() {
-  if (scaling) {
-    scaleTo(mouseX, mouseY);
-    return false;
-  }
-  if (moving) {
-    moveItemTo(mouseX, mouseY);
-    return false;
-  }
-  if (erasing) {
-    eraseAt(mouseX, mouseY);
-    return false;
-  }
-  if (imageDraft) {
-    imageDraft.x1 = mouseX;
-    imageDraft.y1 = mouseY;
-    return false;
-  }
   if (!drawing) return;
   let last = drawing[drawing.length - 1];
   if (dist(last.x, last.y, mouseX, mouseY) > 4) {
@@ -365,10 +329,6 @@ function mouseDragged() {
 }
 
 function mouseReleased() {
-  if (scaling) return endScale();
-  if (moving) return endMove();
-  if (erasing) return eraseEnd();
-  if (imageDraft) return finishImage();
   if (drawing && drawing.length < 2) {
     lines.pop();
     room().history.pop();
@@ -386,7 +346,7 @@ function drawInk() {
   ink.clear();
   ink.noStroke();
   ink.fill(inkHere());
-  for (let f of r.fills) inkFill(ink, f);
+  for (let f of r.fills) inkImage(ink, f);
   for (let f of r.images) inkImage(ink, f);
   ink.noStroke();
   ink.fill(inkHere());
@@ -442,9 +402,6 @@ function roundCorners(pts) {
 
 function keyPressed() {
   if (typing()) return;
-  if (keyCode == ENTER && pathDraft) return finishPath();
-  if (tool == "select" && (key == "+" || key == "=")) return nudgeScale(1.1);
-  if (tool == "select" && (key == "-" || key == "_")) return nudgeScale(1 / 1.1);
   if (keyCode == UP_ARROW) upTapped = true;
   if (keyCode == LEFT_ARROW || keyCode == RIGHT_ARROW || keyCode == UP_ARROW || keyCode == DOWN_ARROW) {
     return false; // don't scroll the page
@@ -455,7 +412,6 @@ function keyPressed() {
 
 function undo() {
   let last = room().history.pop();
-  selected = null;
   if (last && last.snapshot) restoreSnapshot(last.snapshot);
   if (last == "line") lines.pop();
   if (last == "door") room().doors.pop();
@@ -481,7 +437,6 @@ function hookButtons() {
     closeDoorChoice();
     openMap(pendingDoor);
   };
-  document.getElementById("portalButton").onclick = () => togglePortal();
   document.getElementById("notYet").onclick = () => {
     pendingDoor = null;
     closeDoorChoice();
