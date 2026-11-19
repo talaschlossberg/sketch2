@@ -114,6 +114,7 @@ function draw() {
   drawShadow();
   drawGuy();
   drawTrip();
+  drawEraserCursor();
   showRoomName();
 }
 
@@ -312,6 +313,7 @@ function resetLines() {
 function mousePressed(e) {
   if (e && e.target && e.target != drawingContext.canvas) return; // buttons and the map
   if (placingDoor) return placeDoor(mouseX, mouseY);
+  if (tool == "erase") return eraseStart(mouseX, mouseY);
   if (tool != "draw") return;
   drawing = [{ x: mouseX, y: mouseY }];
   drawing.seed = random(1000);
@@ -320,6 +322,10 @@ function mousePressed(e) {
 }
 
 function mouseDragged() {
+  if (erasing) {
+    eraseAt(mouseX, mouseY);
+    return false;
+  }
   if (!drawing) return;
   let last = drawing[drawing.length - 1];
   if (dist(last.x, last.y, mouseX, mouseY) > 4) {
@@ -330,6 +336,7 @@ function mouseDragged() {
 }
 
 function mouseReleased() {
+  if (erasing) return eraseEnd();
   if (drawing && drawing.length < 2) {
     lines.pop();
     room().history.pop();

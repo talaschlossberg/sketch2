@@ -493,6 +493,10 @@ button:focus-visible {
 
 /* ---- cursors for the tools ---- */
 
+body.erasing canvas {
+  cursor: none;
+}
+
 body[data-using="door"] canvas {
   cursor: crosshair;
 }

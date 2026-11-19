@@ -29,9 +29,10 @@ Everything is plain HTML/CSS/JS with no build step.
 
 Open `walk/index.html` on a web server. She walks on the lines you draw: the arrow keys walk, up jumps or goes through a door, and M opens the map. On a phone, arrows appear on screen.
 
-**Two tools** (the rail down the left):
+**Three tools** (the rail down the left):
 
 - **Pen**: draw lines, in pen with a slight wobble. Open lines are ground she walks on and walls she stops at.
+- **Eraser**: drag over lines to rub out just the parts you touch; click a door to take it away. Undo puts back what it took.
 - **Door**: click on a line to put up a real door (cut from a film photo, `walk/doors/door.jpg`), then choose where it goes: a new outside (blue on grass), a new furnished room (on boards), a new empty room (plaster on boards), or a place picked on the map. New places come with a door back.
 
 **Every page is a world**: a wall and a floor, chosen from the bar's **Wall** and **Floor** pickers (each option shows a little preview). Walls: Blue, Clouds (drifting), Sunset, Night (lines drawn in white), Your photo (a photo of your own for that page, with **Change photo**; a film sunset until you choose one), Plaster, and Room (furnished: a window onto the last sky picked, a picture of the outside, a lamp, a table and chair she can jump onto, a plant). Floors: Grass, Sand, Boards, Tiles, Concrete and Clay, painted in perspective from a horizon with the texture finer toward it; Your photo (a photo of your own laid as the ground, squeezed toward the horizon, with **Change floor photo**); or Line, the plain drawn ground. On a painted floor she walks low on the page, the floor stretching away behind her to the horizon, with a soft shadow under her that shrinks and fades as she jumps (`walk/world.js`).
@@ -46,4 +47,4 @@ Everything is saved in the browser (IndexedDB). Type and colour follow PMT and T
 
 Worlds made before the tools were cut down to two still open: their photos and fills are still drawn, and their portals are plain pictures now.
 
-Code: `sketch.js` (walking, drawing, the loop), `world.js` (walls, floors, the shadow), `rooms.js` (rooms, doors, saving), `map.js`, `sky.js` (the painted skies, your photo), `tools.js` (the rail, undo), `images.js` (loading and drawing pictures), `frames.js` (preparing the walk frames).
+Code: `sketch.js` (walking, drawing, the loop), `world.js` (walls, floors, the shadow), `rooms.js` (rooms, doors, saving), `map.js`, `sky.js` (the painted skies, your photo), `tools.js` (the rail, the eraser, undo), `images.js` (loading and drawing pictures), `frames.js` (preparing the walk frames).
